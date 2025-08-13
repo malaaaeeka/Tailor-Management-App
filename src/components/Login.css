@@ -1,0 +1,214 @@
+/* src/components/Login.css */
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.login-card {
+  background: white;
+  padding: 40px;
+  border-radius: 15px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+  width: 100%;
+  max-width: 450px;
+  animation: slideUp 0.6s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.login-card h1 {
+  text-align: center;
+  color: #333;
+  margin-bottom: 30px;
+  font-size: 28px;
+  font-weight: 600;
+}
+
+.login-card h2 {
+  text-align: center;
+  color: #444;
+  margin-bottom: 25px;
+  font-size: 22px;
+  font-weight: 500;
+}
+
+.user-type-selector, .auth-toggle {
+  display: flex;
+  margin-bottom: 25px;
+  border-radius: 30px;
+  overflow: hidden;
+  border: 2px solid #e0e0e0;
+  background: #f8f9fa;
+}
+
+.user-type-selector button, .auth-toggle button {
+  flex: 1;
+  padding: 14px 20px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  color: #666;
+}
+
+.user-type-selector button.active, .auth-toggle button.active {
+  background: #667eea;
+  color: white;
+  transform: scale(1.02);
+}
+
+.user-type-selector button:hover:not(.active), 
+.auth-toggle button:hover:not(.active) {
+  background: #e9ecef;
+  color: #333;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+form input {
+  padding: 16px 20px;
+  border: 2px solid #e0e0e0;
+  border-radius: 10px;
+  font-size: 16px;
+  transition: all 0.3s ease;
+  background: #fafafa;
+}
+
+form input:focus {
+  outline: none;
+  border-color: #667eea;
+  background: white;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.15);
+}
+
+form button[type="submit"] {
+  padding: 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-top: 10px;
+}
+
+form button[type="submit"]:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 15px 35px rgba(102, 126, 234, 0.4);
+}
+
+form button[type="submit"]:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.forgot-password {
+  background: none !important;
+  color: #667eea !important;
+  text-decoration: underline;
+  font-size: 14px !important;
+  padding: 8px !important;
+  margin-top: 5px !important;
+}
+
+.forgot-password:hover {
+  color: #5a67d8 !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.message {
+  margin-top: 20px;
+  padding: 15px;
+  border-radius: 8px;
+  text-align: center;
+  font-weight: 500;
+  animation: fadeIn 0.5s ease-in;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.message.success {
+  background: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.message.error {
+  background: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .login-container {
+    padding: 15px;
+  }
+  
+  .login-card {
+    padding: 30px 25px;
+    max-width: 100%;
+  }
+  
+  .login-card h1 {
+    font-size: 24px;
+  }
+  
+  .login-card h2 {
+    font-size: 20px;
+  }
+  
+  .user-type-selector button, .auth-toggle button {
+    padding: 12px 15px;
+    font-size: 14px;
+  }
+  
+  form input {
+    padding: 14px 16px;
+    font-size: 15px;
+  }
+  
+  form button[type="submit"] {
+    padding: 14px;
+    font-size: 15px;
+  }
+}
+
+@media (max-width: 480px) {
+  .login-card {
+    padding: 25px 20px;
+  }
+  
+  .login-card h1 {
+    font-size: 22px;
+    margin-bottom: 25px;
+  }
+}
