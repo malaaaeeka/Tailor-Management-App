@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { User, ShoppingBag, Calendar, DollarSign, TrendingUp, Bell, Settings, LogOut, Eye, Edit, Check, X, ChevronLeft, ChevronRight, Image, ZoomIn, AlertCircle } from 'lucide-react';
+import { User, ShoppingBag, Calendar, DollarSign, TrendingUp, Bell, LogOut, Eye, Edit, Check, X, ChevronLeft, ChevronRight, Image, ZoomIn, AlertCircle } from 'lucide-react';
 import { auth, db } from '../firebase-config';
 import { doc, getDoc, collection, getDocs, updateDoc, query, orderBy, where, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
@@ -998,7 +998,6 @@ const TailorDashboard = () => {
                 </button>
                 <NotificationDropdown />
               </div>
-              <Settings className="h-6 w-6 text-gray-400 cursor-pointer hover:text-gray-600" />
               <button
                 onClick={handleLogout}
                 className="flex items-center text-red-600 hover:text-red-800"

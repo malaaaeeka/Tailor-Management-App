@@ -51,3 +51,5 @@ firebase-debug.log
 # Temporary folders
 tmp/
 temp/
+
+.env
