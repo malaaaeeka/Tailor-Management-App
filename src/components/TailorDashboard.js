@@ -1,15 +1,103 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, ShoppingBag, Calendar, DollarSign, TrendingUp, Bell, LogOut, Eye, Edit, Check, X, ChevronLeft, ChevronRight, Image, ZoomIn, AlertCircle } from 'lucide-react';
 import { auth, db } from '../firebase-config';
-import { doc, getDoc, collection, getDocs, updateDoc, query, orderBy, where, serverTimestamp, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, updateDoc, query, orderBy, where, serverTimestamp, onSnapshot, addDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
+
+// Enhanced Button Component
+const EnhancedButton = ({ children, variant = 'default', size = 'md', className = '', onClick, ...props }) => {
+  const baseClasses = 'inline-flex items-center justify-center rounded-xl font-medium transition-all duration-300 shadow-elegant hover:shadow-card focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none';
+  
+  const variants = {
+    default: 'bg-primary text-primary-foreground hover:bg-primary/90 focus:ring-primary/50',
+    luxury: 'bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700 shadow-lg hover:shadow-xl transform hover:scale-105',
+    ghost: 'bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground',
+    outline: 'border-2 border-primary text-primary hover:bg-primary hover:text-primary-foreground'
+  };
+  
+  const sizes = {
+    sm: 'px-3 py-2 text-sm',
+    md: 'px-4 py-2 text-sm',
+    lg: 'px-6 py-3 text-base'
+  };
+  
+  return (
+    <button
+      className={`${baseClasses} ${variants[variant]} ${sizes[size]} ${className}`}
+      onClick={onClick}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+};
+
+// Status Badge Component
+const StatusBadge = ({ status }) => {
+  const statusConfig = {
+    pending: { color: 'bg-yellow-100 text-yellow-800 border-yellow-200', label: 'Pending' },
+    confirmed: { color: 'bg-blue-100 text-blue-800 border-blue-200', label: 'Confirmed' },
+    in_progress: { color: 'bg-purple-100 text-purple-800 border-purple-200', label: 'In Progress' },
+    ready: { color: 'bg-green-100 text-green-800 border-green-200', label: 'Ready' },
+    delivered: { color: 'bg-gray-100 text-gray-800 border-gray-200', label: 'Delivered' },
+    cancelled: { color: 'bg-red-100 text-red-800 border-red-200', label: 'Cancelled' }
+  };
+  
+  const config = statusConfig[status] || statusConfig.pending;
+  
+  return (
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${config.color}`}>
+      <div className="w-2 h-2 rounded-full bg-current mr-1.5 opacity-75"></div>
+      {config.label}
+    </span>
+  );
+};
+
+// Progress Ring Component
+const ProgressRing = ({ progress = 0, size = 'md' }) => {
+  const sizeConfig = {
+    sm: { outer: 'w-8 h-8', inner: 'w-6 h-6', text: 'text-xs' },
+    md: { outer: 'w-12 h-12', inner: 'w-10 h-10', text: 'text-sm' }
+  };
+  
+  const config = sizeConfig[size];
+  const circumference = 2 * Math.PI * 16;
+  const strokeDasharray = circumference;
+  const strokeDashoffset = circumference - (progress / 100) * circumference;
+  
+  return (
+    <div className={`relative ${config.outer}`}>
+      <svg className="transform -rotate-90 w-full h-full">
+        <circle
+          cx="50%"
+          cy="50%"
+          r="16"
+          fill="transparent"
+          stroke="#e5e7eb"
+          strokeWidth="3"
+        />
+        <circle
+          cx="50%"
+          cy="50%"
+          r="16"
+          fill="transparent"
+          stroke="#3b82f6"
+          strokeWidth="3"
+          strokeDasharray={strokeDasharray}
+          strokeDashoffset={strokeDashoffset}
+          className="transition-all duration-500 ease-in-out"
+        />
+      </svg>
+    </div>
+  );
+};
 
 const TailorDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [userInfo, setUserInfo] = useState({
     name: 'Loading...',
-    businessName: '',
+    // businessName: '',
     email: ''
   });
   const [orders, setOrders] = useState([]);
@@ -26,6 +114,14 @@ const TailorDashboard = () => {
   const [lastChecked, setLastChecked] = useState(new Date());
   const [notifiedDueDates, setNotifiedDueDates] = useState(new Set());
   const [dueDateWarningDays, setDueDateWarningDays] = useState(2);
+
+// Add this state near other state declarations at the top
+  const [dueDateSettings, setDueDateSettings] = useState({
+  warningDays: 3,
+  urgentDays: 1,
+  enableNotifications: true
+});
+
   
   // Photo viewing states
   const [selectedPhoto, setSelectedPhoto] = useState(null);
@@ -42,49 +138,50 @@ const TailorDashboard = () => {
   const unsubscribeRef = useRef(null);
   const isInitialLoadRef = useRef(true);
 
-  useEffect(() => {
-    const initializeDashboard = async () => {
-      try {
-        setLoading(true);
-        
-        // Check if user is authenticated
-        const user = auth.currentUser;
-        if (!user) {
-          navigate('/login');
-          return;
-        }
+ // Replace the existing initializeDashboard useEffect with this fixed version:
 
-        // Fetch user info first
-        await fetchUserInfo(user);
-        
-        // Fetch customers
-        await fetchCustomers();
-        
-        // Set up orders listener
-        setupOrderListener();
-        
-      } catch (error) {
-        console.error('Error initializing dashboard:', error);
-        // Set fallback user info
-        setUserInfo({
-          name: 'Tailor',
-          businessName: '',
-          email: auth.currentUser?.email || ''
-        });
-      } finally {
-        setLoading(false);
+useEffect(() => {
+  const initializeDashboard = async () => {
+    try {
+      setLoading(true);
+      
+      // Check if user is authenticated
+      const user = auth.currentUser;
+      if (!user) {
+        navigate('/login');
+        return;
       }
-    };
 
-    initializeDashboard();
-    
-    // Cleanup function
-    return () => {
-      if (unsubscribeRef.current) {
-        unsubscribeRef.current();
-      }
-    };
-  }, []); // Empty dependency array
+      // Fetch user info first
+      await fetchUserInfo(user);
+      
+      // ✅ REMOVED: Don't fetch customers here since orders aren't loaded yet
+      // await fetchCustomers(); 
+      
+      // Set up orders listener (this will call fetchCustomers when orders load)
+      setupOrderListener();
+      
+    } catch (error) {
+      console.error('Error initializing dashboard:', error);
+      // Set fallback user info
+      setUserInfo({
+        name: 'Tailor',
+        email: auth.currentUser?.email || ''
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  initializeDashboard();
+  
+  // Cleanup function
+  return () => {
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current();
+    }
+  };
+}, []); // Empty dependency array
 
   const fetchUserInfo = async (user) => {
     try {
@@ -93,13 +190,13 @@ const TailorDashboard = () => {
         const tailorData = tailorDoc.data();
         setUserInfo({
           name: tailorData.name || 'Tailor',
-          businessName: tailorData.businessName || '',
+          // businessName: tailorData.businessName || '',
           email: tailorData.email || user.email
         });
       } else {
         setUserInfo({
           name: user.displayName || 'Tailor',
-          businessName: '',
+          // businessName: '',
           email: user.email
         });
       }
@@ -109,187 +206,241 @@ const TailorDashboard = () => {
     }
   };
 
-  const fetchCustomers = async () => {
-    try {
-      const customersSnapshot = await getDocs(collection(db, 'customers'));
-      const allCustomers = customersSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setCustomers(allCustomers);
-    } catch (error) {
-      console.error('Error fetching customers:', error);
-      // Continue with empty customers array
-      setCustomers([]);
-    }
-  };
+// Replace the existing fetchCustomers function with this fixed version:
 
-  const setupOrderListener = () => {
-    try {
-      // Clean up existing listener if any
-      if (unsubscribeRef.current) {
-        unsubscribeRef.current();
-      }
-
-      const ordersQuery = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+const fetchCustomers = async (ordersArray = orders) => {
+  try {
+    console.log('Extracting customers from orders:', ordersArray.length);
+    
+    // Extract unique customers from orders
+    const customerMap = new Map();
+    
+    ordersArray.forEach(order => {
+      // Create unique key for each customer
+      const customerKey = order.customerId || 
+                         `${order.customerName}-${order.customerPhone}` || 
+                         `customer-${order.id}`;
       
-      const unsubscribe = onSnapshot(ordersQuery, 
-        (snapshot) => {
-          try {
-            const newNotifications = [];
-            const existingOrdersMap = new Map(orders.map(order => [order.id, order]));
-            
-            const allOrders = snapshot.docs.map(doc => {
-              const data = doc.data();
-              const orderId = doc.id;
-              return {
-                id: orderId,
-                ...data
-              };
+      if (!customerMap.has(customerKey) && order.customerName) {
+        customerMap.set(customerKey, {
+          id: order.customerId || `customer-${Date.now()}-${Math.random()}`,
+          name: order.customerName || 'Unknown Customer',
+          phone: order.customerPhone || '',
+          email: order.customerEmail || '',
+          address: order.customerAddress || ''
+        });
+      }
+    });
+    
+    const extractedCustomers = Array.from(customerMap.values());
+    console.log('Extracted customers:', extractedCustomers);
+    
+    setCustomers(extractedCustomers);
+  } catch (error) {
+    console.error('Error extracting customers:', error);
+    setCustomers([]);
+  }
+};
+// Replace the existing setupOrderListener function in your TailorDashboard component
+// Find this function around line 191 and replace it with this improved version:
+
+// Replace the existing setupOrderListener function with this fixed version:
+
+const setupOrderListener = () => {
+  try {
+    // Clean up existing listener if any
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current();
+    }
+
+    const ordersQuery = query(
+      collection(db, 'orders'),
+      orderBy('createdAt', 'desc')
+    );
+    
+    let initialOrdersLoaded = false;
+    let previousOrders = new Map();
+    
+    const unsubscribe = onSnapshot(ordersQuery, 
+      (snapshot) => {
+        try {
+          const newNotifications = [];
+          const allOrders = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              ...data
+            };
+          });
+
+          // On first load, just store the orders without notifications
+          if (!initialOrdersLoaded) {
+            allOrders.forEach(order => {
+              previousOrders.set(order.id, order);
             });
-
-            // Only process notifications after initial load
-            if (!isInitialLoadRef.current) {
-              allOrders.forEach(orderData => {
-                const orderId = orderData.id;
-                const existingOrder = existingOrdersMap.get(orderId);
-                
-                if (!existingOrder) {
-                  // New order notification
-                  newNotifications.push({
-                    id: `new-order-${orderId}-${Date.now()}`,
-                    type: 'new_order',
-                    title: 'New Order Received',
-                    message: `New order from ${orderData.customerName || 'Customer'} - ${orderData.garmentType || 'Custom order'}`,
-                    orderId: orderId,
-                    timestamp: new Date(),
-                    read: false
-                  });
-                } else {
-                  // Check for updates
-                  const existingUpdatedAt = getTimestamp(existingOrder.updatedAt);
-                  const newUpdatedAt = getTimestamp(orderData.updatedAt);
-                  const existingLastModified = getTimestamp(existingOrder.lastModified);
-                  const newLastModified = getTimestamp(orderData.lastModified);
-                  
-                  const wasUpdated = (newUpdatedAt > existingUpdatedAt) || 
-                                   (newLastModified > existingLastModified);
-                  
-                  const wasModifiedByCustomer = orderData.modifiedBy === 'customer';
-                  
-                  if (wasUpdated && wasModifiedByCustomer) {
-                    newNotifications.push({
-                      id: `updated-order-${orderId}-${Date.now()}`,
-                      type: 'order_updated',
-                      title: 'Order Updated',
-                      message: `${orderData.customerName || 'Customer'} updated their order - ${orderData.garmentType || 'Custom order'}`,
-                      orderId: orderId,
-                      timestamp: new Date(),
-                      read: false
-                    });
-                  }
-                }
-              });
-
-              // Check for due date notifications
-              checkDueDateNotifications(allOrders, newNotifications);
-            }
-
-            // Update orders state
             setOrders(allOrders);
-
-            // Handle new notifications
-            if (newNotifications.length > 0) {
-              setNotifications(prev => [
-                ...newNotifications,
-                ...prev.slice(0, 49) // Keep only last 50 notifications
-              ]);
-              setUnreadCount(prev => prev + newNotifications.length);
-              
-              // Show browser notifications if permission granted
-              if (Notification.permission === 'granted') {
-                newNotifications.forEach(notification => {
-                  new Notification(notification.title, {
-                    body: notification.message,
-                    icon: '/favicon.ico',
-                    tag: notification.id
-                  });
+            // ✅ FIX: Call fetchCustomers with the loaded orders
+            fetchCustomers(allOrders);
+            initialOrdersLoaded = true;
+            return;
+          }
+          
+          // Process changes only after initial load
+          allOrders.forEach(currentOrder => {
+            const orderId = currentOrder.id;
+            const previousOrder = previousOrders.get(orderId);
+            
+            if (!previousOrder) {
+              // NEW ORDER - Check if created by customer
+              if (currentOrder.modifiedBy === 'customer' || currentOrder.createdBy === 'customer') {
+                newNotifications.push({
+                  id: `new-order-${orderId}-${Date.now()}`,
+                  type: 'new_order',
+                  title: 'New Order Received',
+                  message: `New ${currentOrder.garmentType || 'order'} from ${currentOrder.customerName}`,
+                  orderId: orderId,
+                  timestamp: new Date(),
+                  read: false,
+                  urgent: true
+                });
+              }
+            } else {
+              // EXISTING ORDER - Check for customer updates
+              if (currentOrder.modifiedBy === 'customer') {
+                newNotifications.push({
+                  id: `customer-update-${orderId}-${Date.now()}`,
+                  type: 'customer_update',
+                  title: 'Order Updated by Customer',
+                  message: `${currentOrder.customerName} updated their ${currentOrder.garmentType || 'order'}`,
+                  orderId: orderId,
+                  timestamp: new Date(),
+                  read: false,
+                  urgent: false
                 });
               }
             }
             
-            // Mark initial load as complete
-            isInitialLoadRef.current = false;
-            
-          } catch (snapshotError) {
-            console.error('Error processing snapshot:', snapshotError);
-          }
-        },
-        (error) => {
-          console.error('Orders listener error:', error);
-          // Try to reconnect after a delay
-          setTimeout(() => {
-            if (auth.currentUser) {
-              setupOrderListener();
-            }
-          }, 5000);
-        }
-      );
+            // Update previous orders map
+            previousOrders.set(orderId, currentOrder);
+          });
 
-      // Store the unsubscribe function
-      unsubscribeRef.current = unsubscribe;
-      
-    } catch (error) {
-      console.error('Error setting up order listener:', error);
+          // Check for due date notifications
+          checkDueDateNotifications(allOrders, newNotifications);
+
+          // Update orders state
+          setOrders(allOrders);
+          
+          // ✅ FIX: Update customers when orders change
+          fetchCustomers(allOrders);
+
+          // Handle new notifications
+          if (newNotifications.length > 0) {
+            setNotifications(prev => [
+              ...newNotifications,
+              ...prev.slice(0, 49) // Keep only last 50 notifications
+            ]);
+            setUnreadCount(prev => prev + newNotifications.length);
+            
+            // Show browser notifications if permission granted
+            if (Notification.permission === 'granted') {
+              newNotifications.forEach(notification => {
+                new Notification(notification.title, {
+                  body: notification.message,
+                  icon: '/favicon.ico',
+                  tag: notification.id
+                });
+              });
+            }
+          }
+          
+        } catch (snapshotError) {
+          console.error('Error processing snapshot:', snapshotError);
+        }
+      },
+      (error) => {
+        console.error('Orders listener error:', error);
+        setTimeout(() => {
+          setupOrderListener();
+        }, 5000);
+      }
+    );
+
+    unsubscribeRef.current = unsubscribe;
+    
+  } catch (error) {
+    console.error('Error setting up order listener:', error);
+  }
+};
+// Helper function to check for meaningful changes in orders
+const checkForOrderChanges = (previousOrder, currentOrder) => {
+  // Compare key fields that matter for customer updates
+  const fieldsToCompare = [
+    'garmentType', 'fabric', 'specialInstructions', 'urgency',
+    'measurements', 'inspirationPhotos'
+  ];
+  
+  for (const field of fieldsToCompare) {
+    if (JSON.stringify(previousOrder[field]) !== JSON.stringify(currentOrder[field])) {
+      return true;
     }
-  };
+  }
+  
+  // Check if updatedAt timestamp changed significantly (more than 1 second)
+  const prevTimestamp = getTimestamp(previousOrder.updatedAt);
+  const currentTimestamp = getTimestamp(currentOrder.updatedAt);
+  
+  return Math.abs(currentTimestamp - prevTimestamp) > 1000; // 1 second threshold
+};
 
   const checkDueDateNotifications = (allOrders, newNotifications) => {
-    const today = new Date();
-    const warningDate = new Date(today);
-    warningDate.setDate(today.getDate() + dueDateWarningDays);
+  if (!dueDateSettings.enableNotifications) return;
+  
+  const today = new Date();
+  const warningDate = new Date(today);
+  warningDate.setDate(today.getDate() + dueDateSettings.warningDays);
+  
+  allOrders.forEach(order => {
+    if (['delivered', 'cancelled'].includes(order.status)) return;
+    if (notifiedDueDates.has(order.id)) return;
     
-    allOrders.forEach(order => {
-      if (['delivered', 'cancelled'].includes(order.status)) return;
-      if (notifiedDueDates.has(order.id)) return;
+    let dueDate;
+    if (order.dueDate?.toDate) {
+      dueDate = order.dueDate.toDate();
+    } else if (typeof order.dueDate === 'string') {
+      dueDate = new Date(order.dueDate);
+    } else if (order.dueDate instanceof Date) {
+      dueDate = order.dueDate;
+    } else if (order.expectedDelivery) {
+      dueDate = new Date(order.expectedDelivery);
+    }
+    
+    if (dueDate && !isNaN(dueDate.getTime())) {
+      const daysDiff = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
       
-      let dueDate;
-      if (order.dueDate?.toDate) {
-        dueDate = order.dueDate.toDate();
-      } else if (typeof order.dueDate === 'string') {
-        dueDate = new Date(order.dueDate);
-      } else if (order.dueDate instanceof Date) {
-        dueDate = order.dueDate;
-      } else if (order.expectedDelivery) {
-        dueDate = new Date(order.expectedDelivery);
-      }
-      
-      if (dueDate && !isNaN(dueDate.getTime())) {
-        const daysDiff = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
+      if (daysDiff <= dueDateSettings.warningDays && daysDiff >= 0) {
+        const isUrgent = daysDiff <= dueDateSettings.urgentDays;
         
-        if (daysDiff <= dueDateWarningDays && daysDiff >= 0) {
-          const isUrgent = daysDiff <= 1;
-          
-          newNotifications.push({
-            id: `due-soon-${order.id}-${Date.now()}`,
-            type: 'due_soon',
-            title: isUrgent ? 'Order Due Tomorrow!' : 'Order Due Soon',
-            message: `${order.customerName || 'Customer'}'s order is due ${
-              daysDiff === 0 ? 'today' : 
-              daysDiff === 1 ? 'tomorrow' : 
-              `in ${daysDiff} days`
-            } - ${order.garmentType || 'Custom order'}`,
-            orderId: order.id,
-            timestamp: new Date(),
-            read: false,
-            urgent: isUrgent
-          });
-          
-          setNotifiedDueDates(prev => new Set([...prev, order.id]));
-        }
+        newNotifications.push({
+          id: `due-soon-${order.id}-${Date.now()}`,
+          type: 'due_soon',
+          title: isUrgent ? 'Order Due Soon!' : 'Order Due Warning',
+          message: `${order.customerName || 'Customer'}'s order is due ${
+            daysDiff === 0 ? 'today' : 
+            daysDiff === 1 ? 'tomorrow' : 
+            `in ${daysDiff} days`
+          } - ${order.garmentType || 'Custom order'}`,
+          orderId: order.id,
+          timestamp: new Date(),
+          read: false,
+          urgent: isUrgent,
+          daysUntilDue: daysDiff
+        });
+        
+        setNotifiedDueDates(prev => new Set([...prev, order.id]));
       }
-    });
-  };
+    }
+  });
+};
 
   const getTimestamp = (timestamp) => {
     if (!timestamp) return 0;
@@ -343,69 +494,129 @@ const TailorDashboard = () => {
       console.error('Error signing out:', error);
     }
   };
-
-  const handleUpdateOrderStatus = async (orderId, newStatus, newProgress = null) => {
+const handleUpdateOrderStatus = async (orderId, newStatus, newProgress = null) => {
     try {
-      const orderRef = doc(db, 'orders', orderId);
-      const updateData = { 
-        status: newStatus,
-        updatedAt: serverTimestamp(),
-        modifiedBy: 'tailor',
-        modificationReason: 'status_update'
-      };
-      
-      if (newProgress !== null) {
-        updateData.progress = newProgress;
-      }
+        const orderRef = doc(db, 'orders', orderId);
+        const updateData = { 
+            status: newStatus,
+            updatedAt: serverTimestamp(),
+            lastModified: serverTimestamp(),
+            modifiedBy: 'tailor', // ADD THIS LINE
+            modificationReason: 'status_update',
+            tailorUpdateId: `tailor-status-${Date.now()}-${Math.random()}`
+        };
+        if (newProgress !== null) {
+            updateData.progress = newProgress;
+        }
 
-      // Set progress based on status
-      if (newStatus === 'pending') updateData.progress = 0;
-      else if (newStatus === 'confirmed') updateData.progress = 10;
-      else if (newStatus === 'in_progress') updateData.progress = newProgress || 50;
-      else if (newStatus === 'ready') updateData.progress = 90;
-      else if (newStatus === 'delivered') updateData.progress = 100;
-      else if (newStatus === 'cancelled') updateData.progress = 0;
-      
-      await updateDoc(orderRef, updateData);
-      
-      // Clean up due date notifications for completed/cancelled orders
-      if (['delivered', 'cancelled'].includes(newStatus)) {
-        setNotifiedDueDates(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(orderId);
-          return newSet;
-        });
-      }
-      
-      // Update selected order if it's currently open
-      if (selectedOrder && selectedOrder.id === orderId) {
-        setSelectedOrder({ ...selectedOrder, ...updateData });
-      }
+        // Set progress based on status
+        if (newStatus === 'pending') updateData.progress = 0;
+        else if (newStatus === 'confirmed') updateData.progress = 10;
+        else if (newStatus === 'in_progress') updateData.progress = newProgress || 50;
+        else if (newStatus === 'ready') updateData.progress = 90;
+        else if (newStatus === 'delivered') updateData.progress = 100;
+        else if (newStatus === 'cancelled') updateData.progress = 0;
+        
+        await updateDoc(orderRef, updateData);
+        
+        console.log('Order status updated by tailor');
+
+        // Notify the customer about the order status update
+        const notification = {
+            id: `tailor-update-${orderId}-${Date.now()}`,
+            type: 'order_updated',
+            title: 'Order Status Updated',
+            message: `Your order has been updated to ${newStatus}`,
+            orderId: orderId,
+            timestamp: new Date(),
+            read: false,
+            urgent: newStatus === 'ready' || newStatus === 'cancelled'
+        };
+        // Send this notification to the customer
+       const currentOrder = orders.find(o => o.id === orderId);
+await sendNotificationToCustomer(notification, currentOrder?.customerId || `customer-${currentOrder?.customerName}`);
+        
+        // Clean up due date notifications for completed/cancelled orders
+        if (['delivered', 'cancelled'].includes(newStatus)) {
+            setNotifiedDueDates(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(orderId);
+                return newSet;
+            });
+        }
+        
+        // Update selected order if it's currently open
+        if (selectedOrder && selectedOrder.id === orderId) {
+            setSelectedOrder({ ...selectedOrder, ...updateData });
+        }
     } catch (error) {
-      console.error('Error updating order:', error);
-      alert('Failed to update order status');
+        console.error('Error updating order:', error);
+        alert('Failed to update order status');
     }
-  };
+};
 
-  const handleUpdateOrderProgress = async (orderId, progress) => {
+// Function to send notification to the customer
+const sendNotificationToCustomer = async (notification, customerId) => {
+  try {
+    // Add to customer's notifications subcollection
+    await addDoc(collection(db, 'customers', customerId, 'notifications'), {
+      ...notification,
+      targetType: 'customer',
+      tailorId: auth.currentUser?.uid
+    });
+    
+    // Also add to global notifications for backup
+    await addDoc(collection(db, 'notifications'), {
+      ...notification,
+      customerId: customerId,
+      targetType: 'customer',
+      tailorId: auth.currentUser?.uid
+    });
+    
+    console.log('Notification sent to customer:', customerId);
+  } catch (error) {
+    console.error('Error sending notification to customer:', error);
+  }
+};
+
+const handleUpdateOrderProgress = async (orderId, progress) => {
     try {
-      const orderRef = doc(db, 'orders', orderId);
-      const updateData = {
-        progress: parseInt(progress),
-        updatedAt: serverTimestamp(),
-        modifiedBy: 'tailor',
-        modificationReason: 'progress_update'
-      };
-      
-      await updateDoc(orderRef, updateData);
-      
-      if (selectedOrder && selectedOrder.id === orderId) {
-        setSelectedOrder({ ...selectedOrder, progress: parseInt(progress) });
-      }
+        const orderRef = doc(db, 'orders', orderId);
+        const updateData = {
+            progress: parseInt(progress),
+            updatedAt: serverTimestamp(),
+            lastModified: serverTimestamp(),
+            modifiedBy: 'tailor', // ADD THIS LINE
+            modificationReason: 'progress_update',
+            tailorUpdateId: `tailor-progress-${Date.now()}-${Math.random()}`
+        };
+        
+        await updateDoc(orderRef, updateData);
+        
+        console.log('Order progress updated by tailor');
+
+        // Notify the customer about the progress update
+        const notification = {
+            id: `tailor-progress-update-${orderId}-${Date.now()}`,
+            type: 'progress_update',
+            title: 'Order Progress Updated',
+            message: `Your order progress is now at ${progress}%`,
+            orderId: orderId,
+            timestamp: new Date(),
+            read: false,
+            urgent: false
+        };
+        // Send this notification to the customer
+        const currentOrder = orders.find(o => o.id === orderId);
+await sendNotificationToCustomer(notification, currentOrder?.customerId || `customer-${currentOrder?.customerName}`);
+        
+        if (selectedOrder && selectedOrder.id === orderId) {
+            setSelectedOrder({ ...selectedOrder, progress: parseInt(progress) });
+        }
     } catch (error) {
-      console.error('Error updating progress:', error);
+        console.error('Error updating progress:', error);
     }
-  };
+};
 
   const toggleNotifications = () => {
     setShowNotifications(!showNotifications);
@@ -557,14 +768,43 @@ const TailorDashboard = () => {
     return order.status === orderFilter;
   });
 
-  const totalRevenue = orders
-    .filter(order => order.status === 'delivered')
-    .reduce((sum, order) => sum + (order.totalAmount || order.price || 0), 0);
 
-  const pendingOrders = orders.filter(order => order.status === 'pending').length;
-  const inProgressOrders = orders.filter(order => ['confirmed', 'in_progress'].includes(order.status)).length;
-  const completedOrders = orders.filter(order => order.status === 'delivered').length;
 
+const totalRevenue = orders
+  .reduce((sum, order) => {
+    // Debug logging for ALL orders
+    console.log('Order status and amount check:', {
+      id: order.id,
+      status: order.status,
+      totalAmount: order.totalAmount,
+      price: order.price,
+      amount: order.amount,
+      items: order.items
+    });
+    
+    let amount = 0;
+    if (order.totalAmount) {
+      amount = parseFloat(order.totalAmount);
+    } else if (order.price) {
+      amount = parseFloat(order.price);
+    } else if (order.amount) {
+      amount = parseFloat(order.amount);
+    } else if (order.items && Array.isArray(order.items)) {
+      amount = order.items.reduce((itemSum, item) => {
+        return itemSum + (parseFloat(item.price) || parseFloat(item.amount) || 0);
+      }, 0);
+    }
+    
+    console.log(`Order ${order.id}: Status=${order.status}, Amount=${amount}`);
+    return sum + amount;
+  }, 0);
+
+console.log('Total Revenue Calculated:', totalRevenue);
+  
+
+const pendingOrders = orders.filter(order => order.status === 'pending').length;
+const inProgressOrders = orders.filter(order => ['confirmed', 'in_progress'].includes(order.status)).length;
+const completedOrders = orders.filter(order => order.status === 'delivered').length;
   const formatOrderDate = (dateValue) => {
     if (!dateValue) return 'N/A';
     
@@ -582,81 +822,80 @@ const TailorDashboard = () => {
   };
 
   const NotificationDropdown = () => {
-    if (!showNotifications) return null;
+  if (!showNotifications) return null;
 
-    return (
-      <div className="absolute right-0 top-12 w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-96 overflow-y-auto">
-        <div className="p-4 border-b border-gray-200">
-          <div className="flex justify-between items-center">
-            <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
-            {notifications.length > 0 && (
-              <button
-                onClick={() => setNotifications([])}
-                className="text-sm text-gray-500 hover:text-gray-700"
-              >
-                Clear all
-              </button>
-            )}
-          </div>
-        </div>
-        
-        <div className="max-h-80 overflow-y-auto">
-          {notifications.length === 0 ? (
-            <div className="p-6 text-center text-gray-500">
-              <Bell className="h-12 w-12 mx-auto text-gray-300 mb-2" />
-              <p>No notifications</p>
-            </div>
-          ) : (
-            notifications.map((notification) => (
-              <div
-                key={notification.id}
-                className={`p-4 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors ${
-                  !notification.read ? 'bg-blue-50' : ''
-                }`}
-                onClick={() => handleNotificationClick(notification)}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center">
-                      {notification.type === 'new_order' ? (
-                        <ShoppingBag className="h-4 w-4 text-green-500 mr-2 mt-0.5" />
-                      ) : notification.type === 'due_soon' ? (
-                        <AlertCircle className={`h-4 w-4 mr-2 mt-0.5 ${notification.urgent ? 'text-red-500' : 'text-orange-500'}`} />
-                      ) : (
-                        <Edit className="h-4 w-4 text-blue-500 mr-2 mt-0.5" />
-                      )}
-                      <h4 className="text-sm font-medium text-gray-900">
-                        {notification.title}
-                      </h4>
-                      {!notification.read && (
-                        <div className="ml-2 h-2 w-2 bg-blue-500 rounded-full"></div>
-                      )}
-                    </div>
-                    <p className="text-sm text-gray-600 mt-1">
-                      {notification.message}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-2">
-                      {notification.timestamp.toLocaleString()}
-                    </p>
-                  </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      clearNotification(notification.id);
-                    }}
-                    className="text-gray-400 hover:text-gray-600 ml-2"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              </div>
-            ))
+  return (
+     <div className="absolute right-0 top-full mt-2 w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-[9999] max-h-96 overflow-y-auto">
+      <div className="p-4 border-b border-gray-200">
+        <div className="flex justify-between items-center">
+          <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
+          {notifications.length > 0 && (
+            <button
+              onClick={() => setNotifications([])}
+              className="text-sm text-gray-500 hover:text-gray-700"
+            >
+              Clear all
+            </button>
           )}
         </div>
       </div>
-    );
-  };
-
+      
+      <div className="max-h-80 overflow-y-auto">
+        {notifications.length === 0 ? (
+          <div className="p-6 text-center text-gray-500">
+            <Bell className="h-12 w-12 mx-auto text-gray-300 mb-2" />
+            <p>No notifications</p>
+          </div>
+        ) : (
+          notifications.map((notification) => (
+            <div
+              key={notification.id}
+              className={`p-4 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors ${
+                !notification.read ? 'bg-blue-50' : ''
+              }`}
+              onClick={() => handleNotificationClick(notification)}
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center">
+                    {notification.type === 'new_order' ? (
+                      <ShoppingBag className="h-4 w-4 text-green-500 mr-2 mt-0.5" />
+                    ) : notification.type === 'due_soon' ? (
+                      <AlertCircle className={`h-4 w-4 mr-2 mt-0.5 ${notification.urgent ? 'text-red-500' : 'text-orange-500'}`} />
+                    ) : (
+                      <Edit className="h-4 w-4 text-blue-500 mr-2 mt-0.5" />
+                    )}
+                    <h4 className="text-sm font-medium text-gray-900">
+                      {notification.title}
+                    </h4>
+                    {!notification.read && (
+                      <div className="ml-2 h-2 w-2 bg-blue-500 rounded-full"></div>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {notification.message}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-2">
+                    {notification.timestamp.toLocaleString()}
+                  </p>
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    clearNotification(notification.id);
+                  }}
+                  className="text-gray-400 hover:text-gray-600 ml-2"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+};
   const PhotoModal = () => {
     if (!showPhotoModal || !selectedPhoto) return null;
 
@@ -742,9 +981,7 @@ const TailorDashboard = () => {
                             )}
                           </p>
                         </div>
-                        <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(order.status)}`}>
-                          {order.status?.replace('_', ' ')}
-                        </span>
+                        <StatusBadge status={order.status} />
                       </div>
                       
                       <div className="grid grid-cols-2 gap-4 text-sm">
@@ -759,16 +996,18 @@ const TailorDashboard = () => {
                       </div>
                       
                       <div className="mt-3 flex space-x-2">
-                        <button
+                        <EnhancedButton
+                          variant="ghost"
+                          size="sm"
                           onClick={() => {
                             setSelectedOrder(order);
                             setShowDayModal(false);
                             setShowOrderModal(true);
                           }}
-                          className="text-blue-600 hover:text-blue-800 text-sm"
+                          className="text-blue-600 hover:text-blue-800"
                         >
                           View Details
-                        </button>
+                        </EnhancedButton>
                       </div>
                     </div>
                   );
@@ -800,13 +1039,13 @@ const TailorDashboard = () => {
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40">
-        <div className="bg-white rounded-lg max-w-4xl w-full max-h-[95vh] overflow-y-auto m-4">
-          <div className="p-6 border-b">
+        <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto m-4 shadow-luxury border border-gray-200">
+          <div className="p-6 border-b bg-gradient-to-r from-gray-50 to-white">
             <div className="flex justify-between items-center">
-              <h3 className="text-xl font-semibold">Order Details - #{selectedOrder.id?.slice(-8)}</h3>
+              <h3 className="text-2xl font-bold text-gray-900">Order Details - #{selectedOrder.id?.slice(-8)}</h3>
               <button 
                 onClick={() => setShowOrderModal(false)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-full transition-colors"
               >
                 <X size={24} />
               </button>
@@ -814,30 +1053,45 @@ const TailorDashboard = () => {
           </div>
           
           <div className="p-6 space-y-6">
-            <div>
-              <h4 className="font-medium text-gray-900 mb-2">Customer Information</h4>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p><strong>Name:</strong> {customer.name || 'N/A'}</p>
-                <p><strong>Phone:</strong> {customer.phone || 'N/A'}</p>
-                <p><strong>Email:</strong> {customer.email || 'N/A'}</p>
-                <p><strong>Address:</strong> {customer.address || 'N/A'}</p>
+            <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-6 rounded-xl border border-blue-100">
+              <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
+                <User className="h-5 w-5 mr-2 text-blue-600" />
+                Customer Information
+              </h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-600">Name</p>
+                  <p className="font-medium text-gray-900">{customer.name || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Phone</p>
+                  <p className="font-medium text-gray-900">{customer.phone || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Email</p>
+                  <p className="font-medium text-gray-900">{customer.email || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Address</p>
+                  <p className="font-medium text-gray-900">{customer.address || 'N/A'}</p>
+                </div>
               </div>
             </div>
 
             {inspirationPhotos.length > 0 && (
-              <div>
-                <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                  <Image className="h-5 w-5 mr-2" />
+              <div className="bg-gradient-to-r from-green-50 to-blue-50 p-6 rounded-xl border border-green-100">
+                <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
+                  <Image className="h-5 w-5 mr-2 text-green-600" />
                   Customer Inspiration Photos ({inspirationPhotos.length})
                 </h4>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                   {inspirationPhotos.map((photo, index) => (
                     <div key={index} className="relative group">
-                      <div className="aspect-square bg-gray-200 rounded-lg overflow-hidden cursor-pointer">
+                      <div className="aspect-square bg-gray-200 rounded-xl overflow-hidden cursor-pointer shadow-md hover:shadow-lg transition-all duration-300 group-hover:scale-105">
                         <img
                           src={photo.url || photo}
                           alt={photo.name || `Inspiration ${index + 1}`}
-                          className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                          className="w-full h-full object-cover"
                           onClick={() => openPhotoModal(photo)}
                           onError={(e) => {
                             console.error('Error loading thumbnail:', photo);
@@ -852,27 +1106,22 @@ const TailorDashboard = () => {
                       <p className="text-xs text-gray-500 mt-2 truncate">
                         {photo.name || `Photo ${index + 1}`}
                       </p>
-                      {photo.uploadedAt && (
-                        <p className="text-xs text-gray-400">
-                          {new Date(photo.uploadedAt).toLocaleDateString()}
-                        </p>
-                      )}
                     </div>
                   ))}
                 </div>
-                <p className="text-sm text-gray-500 mt-2">
+                <p className="text-sm text-gray-500 mt-4 italic">
                   Click on any photo to view it in full size
                 </p>
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <h4 className="font-medium text-gray-900 mb-2">Order Status</h4>
+            <div className="grid grid-cols-2 gap-6">
+              <div className="bg-gradient-to-r from-yellow-50 to-orange-50 p-6 rounded-xl border border-yellow-100">
+                <h4 className="font-semibold text-gray-900 mb-4">Order Status</h4>
                 <select 
                   value={selectedOrder.status}
                   onChange={(e) => handleUpdateOrderStatus(selectedOrder.id, e.target.value)}
-                  className="w-full p-2 border rounded-lg"
+                  className="w-full p-3 border-2 border-gray-200 rounded-xl text-sm font-medium focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
                 >
                   <option value="pending">Pending</option>
                   <option value="confirmed">Confirmed</option>
@@ -883,73 +1132,102 @@ const TailorDashboard = () => {
                 </select>
               </div>
               
-              <div>
-                <h4 className="font-medium text-gray-900 mb-2">Progress (%)</h4>
+              <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-6 rounded-xl border border-purple-100">
+                <h4 className="font-semibold text-gray-900 mb-4">Progress (%)</h4>
                 <input
                   type="number"
                   min="0"
                   max="100"
                   value={selectedOrder.progress || 0}
                   onChange={(e) => handleUpdateOrderProgress(selectedOrder.id, e.target.value)}
-                  className="w-full p-2 border rounded-lg"
+                  className="w-full p-3 border-2 border-gray-200 rounded-xl text-sm font-medium focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
                 />
+                <div className="mt-3">
+                  <ProgressRing progress={selectedOrder.progress || 0} size="md" />
+                </div>
               </div>
             </div>
 
-            <div>
-              <h4 className="font-medium text-gray-900 mb-2">Order Details</h4>
-              <div className="space-y-2">
+            <div className="bg-gradient-to-r from-gray-50 to-blue-50 p-6 rounded-xl border border-gray-100">
+              <h4 className="font-semibold text-gray-900 mb-4">Order Details</h4>
+              <div className="space-y-3">
                 {selectedOrder.items?.length > 0 ? (
                   selectedOrder.items.map((item, index) => (
-                    <div key={index} className="bg-gray-50 p-3 rounded-lg flex justify-between">
+                    <div key={index} className="bg-white p-4 rounded-lg flex justify-between items-center shadow-sm">
                       <div>
-                        <p className="font-medium">{item.garmentType}</p>
+                        <p className="font-medium text-gray-900">{item.garmentType}</p>
                         <p className="text-sm text-gray-600">Quantity: {item.quantity || 1}</p>
                       </div>
-                      <p className="font-medium">${item.price}</p>
+                      <p className="font-bold text-lg text-blue-600">${item.price}</p>
                     </div>
                   ))
                 ) : (
-                  <div className="bg-gray-50 p-3 rounded-lg">
-                    <p className="font-medium">{selectedOrder.garmentType || 'Custom Order'}</p>
-                    <p className="text-sm text-gray-600">Quantity: 1</p>
-                    <p className="text-sm text-gray-600">Price: ${selectedOrder.totalAmount || selectedOrder.price || 0}</p>
+                  <div className="bg-white p-4 rounded-lg shadow-sm">
+                    <p className="font-medium text-gray-900">{selectedOrder.garmentType || 'Custom Order'}</p>
+                    <div className="flex justify-between items-center mt-2">
+                      <p className="text-sm text-gray-600">Quantity: 1</p>
+                      <p className="font-bold text-lg text-blue-600">${selectedOrder.totalAmount || selectedOrder.price || 0}</p>
+                    </div>
                   </div>
                 )}
               </div>
             </div>
 
             {selectedOrder.measurements && (
-              <div>
-                <h4 className="font-medium text-gray-900 mb-2">Measurements</h4>
-                <div className="bg-gray-50 p-4 rounded-lg grid grid-cols-2 gap-2 text-sm">
+              <div className="bg-gradient-to-r from-indigo-50 to-purple-50 p-6 rounded-xl border border-indigo-100">
+                <h4 className="font-semibold text-gray-900 mb-4">Measurements</h4>
+                <div className="grid grid-cols-3 gap-4">
                   {Object.entries(selectedOrder.measurements).map(([key, value]) => (
-                    value && <p key={key}><strong>{key}:</strong> {value}"</p>
+                    value && (
+                      <div key={key} className="bg-white p-3 rounded-lg shadow-sm">
+                        <p className="text-xs text-gray-500 uppercase tracking-wide">{key}</p>
+                        <p className="font-bold text-gray-900">{value}"</p>
+                      </div>
+                    )
                   ))}
                 </div>
               </div>
             )}
 
             {(selectedOrder.fabric || selectedOrder.specialInstructions) && (
-              <div>
-                <h4 className="font-medium text-gray-900 mb-2">Additional Details</h4>
-                <div className="bg-gray-50 p-4 rounded-lg text-sm space-y-2">
-                  {selectedOrder.fabric && <p><strong>Fabric:</strong> {selectedOrder.fabric}</p>}
+              <div className="bg-gradient-to-r from-green-50 to-teal-50 p-6 rounded-xl border border-green-100">
+                <h4 className="font-semibold text-gray-900 mb-4">Additional Details</h4>
+                <div className="space-y-3">
+                  {selectedOrder.fabric && (
+                    <div className="bg-white p-3 rounded-lg shadow-sm">
+                      <p className="text-sm font-medium text-gray-700">Fabric</p>
+                      <p className="text-gray-900">{selectedOrder.fabric}</p>
+                    </div>
+                  )}
                   {selectedOrder.specialInstructions && (
-                    <p><strong>Special Instructions:</strong> {selectedOrder.specialInstructions}</p>
+                    <div className="bg-white p-3 rounded-lg shadow-sm">
+                      <p className="text-sm font-medium text-gray-700">Special Instructions</p>
+                      <p className="text-gray-900">{selectedOrder.specialInstructions}</p>
+                    </div>
                   )}
                 </div>
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <p><strong>Order Date:</strong> {formatOrderDate(selectedOrder.createdAt)}</p>
-                <p><strong>Due Date:</strong> {formatOrderDate(selectedOrder.dueDate || selectedOrder.expectedDelivery)}</p>
-              </div>
-              <div>
-                <p><strong>Total Amount:</strong> ${selectedOrder.totalAmount || selectedOrder.price || 0}</p>
-                <p><strong>Urgency:</strong> {selectedOrder.urgency || 'Normal'}</p>
+            <div className="bg-gradient-to-r from-slate-50 to-gray-50 p-6 rounded-xl border border-slate-100">
+              <h4 className="font-semibold text-gray-900 mb-4">Order Timeline</h4>
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <p className="text-sm text-gray-600">Order Date</p>
+                  <p className="font-medium text-gray-900">{formatOrderDate(selectedOrder.createdAt)}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Due Date</p>
+                  <p className="font-medium text-gray-900">{formatOrderDate(selectedOrder.dueDate || selectedOrder.expectedDelivery)}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Total Amount</p>
+                  <p className="font-bold text-xl text-green-600">${selectedOrder.totalAmount || selectedOrder.price || 0}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Urgency</p>
+                  <p className="font-medium text-gray-900 capitalize">{selectedOrder.urgency || 'Normal'}</p>
+                </div>
               </div>
             </div>
           </div>
@@ -960,171 +1238,196 @@ const TailorDashboard = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading dashboard...</p>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p className="text-gray-600 text-lg">Loading your dashboard...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-6">
-            <div className="flex items-center">
-              <User className="h-8 w-8 text-blue-600 mr-3" />
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">{userInfo.name}</h1>
-                {userInfo.businessName && (
-                  <p className="text-sm text-gray-500">{userInfo.businessName}</p>
-                )}
-              </div>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+      {/* Header */}
+     <header className="relative bg-gradient-to-r from-blue-600 via-purple-600 to-blue-700 text-white shadow-2xl overflow-visible z-10">
+        <div className="absolute inset-0 bg-gradient-to-r from-purple-600/20 to-blue-600/20" />
+        <div className="absolute inset-0 opacity-10" style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Cpath d='m36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`
+        }} />
+        
+        <div className="relative max-w-7xl mx-auto px-6 py-8">
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+            <div className="space-y-2">
+              <h1 className="text-3xl lg:text-4xl font-bold tracking-tight">
+                xyz shop
+                <span className="block text-lg lg:text-xl font-normal text-white/80 mt-1">
+                  {userInfo.name}'s Dashboard
+                </span>
+              </h1>
+              {userInfo.businessName && (
+                <p className="text-white/70 text-lg">{userInfo.businessName}</p>
+              )}
+              <p className="text-white/70">
+                Manage orders and track your business
+              </p>
             </div>
-            <div className="flex items-center space-x-4">
-              <div className="relative">
+            
+            <div className="flex items-center gap-4">
+              <div className="relative z-[100]">
                 <button
                   onClick={toggleNotifications}
-                  className="h-6 w-6 text-gray-400 cursor-pointer hover:text-gray-600 relative"
-                >
-                  <Bell size={24} />
+                   className="p-3 bg-white/10 hover:bg-white/20 rounded-full transition-all duration-300 relative backdrop-blur-sm"
+          >
+                  <Bell size={20} />
                   {unreadCount > 0 && (
-                    <span className="absolute -top-2 -right-2 h-5 w-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-medium">
+                    <span className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-medium">
                       {unreadCount > 9 ? '9+' : unreadCount}
                     </span>
                   )}
                 </button>
                 <NotificationDropdown />
               </div>
-              <button
+              
+              <EnhancedButton
                 onClick={handleLogout}
-                className="flex items-center text-red-600 hover:text-red-800"
+                variant="ghost"
+                className="text-white/80 hover:text-white hover:bg-white/10 backdrop-blur-sm"
               >
-                <LogOut className="h-5 w-5 mr-1" />
-                Logout
-              </button>
+                <LogOut className="h-4 w-4 mr-2" />
+                Sign Out
+              </EnhancedButton>
             </div>
           </div>
         </div>
       </header>
 
-      <div className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <nav className="flex space-x-8">
-            {[
-              { id: 'overview', name: 'Overview', icon: TrendingUp },
-              { id: 'orders', name: 'Orders', icon: ShoppingBag },
-              { id: 'customers', name: 'Customers', icon: User },
-              { id: 'calendar', name: 'Calendar', icon: Calendar }
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === tab.id
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <tab.icon className="h-5 w-5 mr-2" />
-                {tab.name}
-              </button>
-            ))}
-          </nav>
-        </div>
-      </div>
-
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+      <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
         {activeTab === 'overview' && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <ShoppingBag className="h-8 w-8 text-yellow-600" />
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">Pending Orders</dt>
-                      <dd className="text-lg font-medium text-gray-900">{pendingOrders}</dd>
-                    </dl>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <TrendingUp className="h-8 w-8 text-blue-600" />
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">In Progress</dt>
-                      <dd className="text-lg font-medium text-gray-900">{inProgressOrders}</dd>
-                    </dl>
+          <>
+            {/* Stats Overview */}
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-2xl border border-white/50 p-8">
+              <h2 className="text-2xl lg:text-3xl font-bold text-gray-900 mb-6">Business Overview</h2>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="relative overflow-hidden rounded-xl border p-6 transition-all duration-300 hover:shadow-xl hover:scale-105 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-gray-600">Total Orders</p>
+                      <p className="text-3xl font-bold text-blue-600">{orders.length}</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-blue-500/10 text-blue-600">
+                      <ShoppingBag className="w-6 h-6" />
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <Check className="h-8 w-8 text-green-600" />
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">Completed</dt>
-                      <dd className="text-lg font-medium text-gray-900">{completedOrders}</dd>
-                    </dl>
+                <div className="relative overflow-hidden rounded-xl border p-6 transition-all duration-300 hover:shadow-xl hover:scale-105 bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-gray-600">In Progress</p>
+                      <p className="text-3xl font-bold text-purple-600">{inProgressOrders}</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-purple-500/10 text-purple-600">
+                      <TrendingUp className="w-6 h-6" />
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <DollarSign className="h-8 w-8 text-green-600" />
+                <div className="relative overflow-hidden rounded-xl border p-6 transition-all duration-300 hover:shadow-xl hover:scale-105 bg-gradient-to-br from-green-50 to-green-100 border-green-200">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-gray-600">Completed</p>
+                      <p className="text-3xl font-bold text-green-600">{completedOrders}</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-green-500/10 text-green-600">
+                      <Check className="w-6 h-6" />
+                    </div>
                   </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">Total Revenue</dt>
-                      <dd className="text-lg font-medium text-gray-900">${totalRevenue}</dd>
-                    </dl>
+                </div>
+
+                <div className="relative overflow-hidden rounded-xl border p-6 transition-all duration-300 hover:shadow-xl hover:scale-105 bg-gradient-to-br from-yellow-50 to-yellow-100 border-yellow-200">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-gray-600">Revenue</p>
+                      <p className="text-3xl font-bold text-yellow-600">${totalRevenue}</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-yellow-500/10 text-yellow-600">
+                      <DollarSign className="w-6 h-6" />
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="bg-white shadow rounded-lg">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-medium text-gray-900">Recent Orders</h3>
+            {/* Recent Orders */}
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-2xl border border-white/50 overflow-hidden">
+              <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-6 py-4 border-b border-gray-200">
+                <h3 className="text-xl font-bold text-gray-900">Recent Orders</h3>
               </div>
-              <div className="divide-y divide-gray-200">
-                {orders.slice(0, 5).map((order) => {
+              <div className="divide-y divide-gray-100">
+                {orders.slice(0, 5).map((order, index) => {
                   const customer = customers.find(c => c.id === order.customerId) || 
                                  { name: order.customerName };
+                  const inspirationPhotos = getInspirationPhotos(order);
                   return (
-                    <div key={order.id} className="px-6 py-4 hover:bg-gray-50">
+                    <div 
+                      key={order.id} 
+                      className="px-6 py-4 hover:bg-gradient-to-r hover:from-blue-50 hover:to-purple-50 transition-all duration-300 group"
+                      style={{ animationDelay: `${index * 0.1}s` }}
+                    >
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center">
+                        <div className="flex items-center space-x-4">
+                          <div className="w-2 h-2 bg-blue-500 rounded-full opacity-60 group-hover:opacity-100 transition-opacity" />
                           <div>
-                            <p className="text-sm font-medium text-gray-900">
+                            <p className="text-sm font-medium text-gray-900 flex items-center">
                               {customer.name || 'Unknown Customer'}
+                              {inspirationPhotos.length > 0 && (
+                                <span className="ml-2 inline-flex items-center text-xs text-blue-600">
+                                  <Image className="h-3 w-3 mr-1" />
+                                  {inspirationPhotos.length}
+                                </span>
+                              )}
                             </p>
                             <p className="text-sm text-gray-500">
                               {order.garmentType || (order.items?.[0]?.garmentType) || 'Custom order'}
                             </p>
+                            <p className="text-xs text-gray-400">
+                              Order #{order.id?.slice(-8)} • {formatOrderDate(order.createdAt)}
+                            </p>
                           </div>
                         </div>
                         <div className="flex items-center space-x-4">
-                          <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(order.status)}`}>
-                            {order.status?.replace('_', ' ')}
-                          </span>
-                          <p className="text-sm font-medium text-gray-900">
-                            ${order.totalAmount || order.price || 0}
-                          </p>
+                          <div className="text-right">
+                            <p className="text-sm font-medium text-gray-900">
+                              ${order.totalAmount || order.price || 0}
+                            </p>
+                            <div className="flex items-center space-x-2">
+                              <StatusBadge status={order.status} />
+                              <span className="text-xs text-gray-500">
+                                {order.progress || 0}%
+                              </span>
+                            </div>
+                          </div>
+                          <EnhancedButton
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedOrder(order);
+                              setShowOrderModal(true);
+                            }}
+                            className="text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                          >
+                            <Eye size={16} />
+                          </EnhancedButton>
+                        </div>
+                      </div>
+                      <div className="mt-3">
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div 
+                            className={`h-2 rounded-full transition-all duration-500 ${getProgressColor(order.progress || 0)}`}
+                            style={{ width: `${order.progress || 0}%` }}
+                          ></div>
                         </div>
                       </div>
                     </div>
@@ -1132,134 +1435,201 @@ const TailorDashboard = () => {
                 })}
               </div>
             </div>
-          </div>
+          </>
         )}
 
         {activeTab === 'orders' && (
-          <div className="space-y-6">
-            <div className="bg-white shadow rounded-lg">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <div className="flex justify-between items-center">
-                  <h3 className="text-lg font-medium text-gray-900">Orders</h3>
-                  <select
-                    value={orderFilter}
-                    onChange={(e) => setOrderFilter(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-md text-sm"
-                  >
-                    <option value="all">All Orders</option>
-                    <option value="pending">Pending</option>
-                    <option value="confirmed">Confirmed</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="ready">Ready</option>
-                    <option value="delivered">Delivered</option>
-                    <option value="cancelled">Cancelled</option>
-                  </select>
+          <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-2xl border border-white/50 overflow-hidden">
+            <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-6 py-4 border-b border-gray-200">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <h3 className="text-xl font-bold text-gray-900">Customer Orders</h3>
+                
+                <div className="flex items-center gap-2 flex-wrap">
+                  {[
+                    { id: 'all', label: 'All Orders', count: orders.length },
+                    { id: 'pending', label: 'Pending', count: orders.filter(o => o.status === 'pending').length },
+                    { id: 'confirmed', label: 'Active', count: orders.filter(o => ['confirmed', 'in_progress'].includes(o.status)).length },
+                    { id: 'ready', label: 'Ready', count: orders.filter(o => o.status === 'ready').length },
+                    { id: 'delivered', label: 'Completed', count: orders.filter(o => o.status === 'delivered').length }
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setOrderFilter(tab.id)}
+                      className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-300 ${
+                        orderFilter === tab.id
+                          ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800'
+                      }`}
+                    >
+                      {tab.label}
+                      <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-current/20">
+                        {tab.count}
+                      </span>
+                    </button>
+                  ))}
                 </div>
               </div>
-              <div className="divide-y divide-gray-200">
-                {filteredOrders.length > 0 ? (
-                  filteredOrders.map((order) => {
-                    const customer = customers.find(c => c.id === order.customerId) || 
-                                   { name: order.customerName, phone: order.customerPhone };
-                    const inspirationPhotos = getInspirationPhotos(order);
-                    return (
-                      <div key={order.id} className="px-6 py-4 hover:bg-gray-50">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-4">
-                            <div>
-                              <p className="text-sm font-medium text-gray-900 flex items-center">
-                                {customer.name || 'Unknown Customer'}
-                                {inspirationPhotos.length > 0 && (
-                                  <span className="ml-2 inline-flex items-center text-xs text-blue-600">
-                                    <Image className="h-3 w-3 mr-1" />
-                                    {inspirationPhotos.length}
-                                  </span>
-                                )}
-                              </p>
-                              <p className="text-sm text-gray-500">
-                                {order.garmentType || (order.items?.[0]?.garmentType) || 'Custom order'}
-                              </p>
-                              <p className="text-xs text-gray-400">
-                                Order #{order.id?.slice(-8)} • {formatOrderDate(order.createdAt)}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-4">
-                            <div className="text-right">
-                              <p className="text-sm font-medium text-gray-900">
-                                ${order.totalAmount || order.price || 0}
-                              </p>
-                              <div className="flex items-center space-x-2">
-                                <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(order.status)}`}>
-                                  {order.status?.replace('_', ' ')}
-                                </span>
-                                <span className="text-xs text-gray-500">
-                                  {order.progress || 0}%
-                                </span>
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => {
-                                setSelectedOrder(order);
-                                setShowOrderModal(true);
-                              }}
-                              className="text-blue-600 hover:text-blue-800"
-                            >
-                              <Eye size={16} />
-                            </button>
-                          </div>
-                        </div>
-                        <div className="mt-2">
-                          <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div 
-                              className={`h-2 rounded-full ${getProgressColor(order.progress || 0)}`}
-                              style={{ width: `${order.progress || 0}%` }}
-                            ></div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="px-6 py-12 text-center">
-                    <ShoppingBag className="mx-auto h-12 w-12 text-gray-400" />
-                    <h3 className="mt-2 text-sm font-medium text-gray-900">No orders</h3>
-                    <p className="mt-1 text-sm text-gray-500">
-                      {orderFilter === 'all' ? 'No orders found.' : `No ${orderFilter.replace('_', ' ')} orders found.`}
-                    </p>
+            </div>
+
+            <div className="overflow-x-auto">
+              {filteredOrders.length === 0 ? (
+                <div className="p-12 text-center">
+                  <div className="mx-auto w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center mb-4">
+                    <ShoppingBag className="w-12 h-12 text-gray-400" />
                   </div>
-                )}
-              </div>
+                  <h4 className="text-lg font-semibold text-gray-900 mb-2">No orders found</h4>
+                  <p className="text-gray-500">
+                    {orderFilter === 'all' 
+                      ? "No orders at the moment." 
+                      : `No ${orderFilter.replace('_', ' ')} orders at the moment.`}
+                  </p>
+                </div>
+              ) : (
+                <table className="min-w-full divide-y divide-gray-100">
+                  <thead className="bg-gradient-to-r from-gray-50 to-blue-50">
+                    <tr>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Order ID</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Customer</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Garment</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Progress</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Due Date</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-50">
+                    {filteredOrders.map((order, index) => {
+                      const customer = customers.find(c => c.id === order.customerId) || 
+                                     { name: order.customerName, phone: order.customerPhone };
+                      const inspirationPhotos = getInspirationPhotos(order);
+                      return (
+                        <tr 
+                          key={order.id} 
+                          className="hover:bg-gradient-to-r hover:from-blue-50 hover:to-purple-50 transition-all duration-300 group"
+                          style={{ animationDelay: `${index * 0.1}s` }}
+                        >
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center">
+                              <div className="w-2 h-2 bg-blue-500 rounded-full mr-3 opacity-60 group-hover:opacity-100 transition-opacity" />
+                              <span className="text-sm font-mono text-gray-900">#{order.id?.slice(-8)}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">{customer.name || 'Unknown Customer'}</div>
+                            <div className="text-xs text-gray-500">{customer.phone || 'No phone'}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center">
+                              <div>
+                                <div className="text-sm font-medium text-gray-900">
+                                  {order.garmentType || (order.items?.[0]?.garmentType) || 'Custom order'}
+                                </div>
+                                <div className="text-xs text-gray-500">{order.fabric || 'N/A'}</div>
+                              </div>
+                              {inspirationPhotos.length > 0 && (
+                                <span className="ml-2 inline-flex items-center text-xs text-blue-600">
+                                  <Image className="h-3 w-3 mr-1" />
+                                  {inspirationPhotos.length}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <StatusBadge status={order.status} />
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center gap-3">
+                              <ProgressRing progress={order.progress || 0} size="sm" />
+                              <span className="text-sm text-gray-600">{order.progress || 0}%</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {formatOrderDate(order.dueDate || order.expectedDelivery)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm">
+                            <div className="flex items-center gap-2">
+                              <EnhancedButton
+                                onClick={() => {
+                                  setSelectedOrder(order);
+                                  setShowOrderModal(true);
+                                }}
+                                variant="ghost"
+                                size="sm"
+                                className="text-blue-600 hover:text-white hover:bg-blue-500"
+                              >
+                                View Details
+                              </EnhancedButton>
+                              
+                              {order.status === 'pending' && (
+                                <EnhancedButton
+                                  onClick={() => handleUpdateOrderStatus(order.id, 'confirmed', 25)}
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-green-600 hover:text-white hover:bg-green-500"
+                                >
+                                  Accept
+                                </EnhancedButton>
+                              )}
+                              
+                              {order.status === 'in_progress' && (
+                                <EnhancedButton
+                                  onClick={() => handleUpdateOrderStatus(order.id, 'ready', 100)}
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-purple-600 hover:text-white hover:bg-purple-500"
+                                >
+                                  Mark Ready
+                                </EnhancedButton>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         )}
 
         {activeTab === 'customers' && (
-          <div className="bg-white shadow rounded-lg">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900">Customers</h3>
+          <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-2xl border border-white/50 overflow-hidden">
+            <div className="bg-gradient-to-r from-gray-50 to-purple-50 px-6 py-4 border-b border-gray-200">
+              <h3 className="text-xl font-bold text-gray-900">Customers</h3>
             </div>
-            <div className="divide-y divide-gray-200">
+            <div className="divide-y divide-gray-100">
               {customers.length > 0 ? (
-                customers.map((customer) => {
+                customers.map((customer, index) => {
                   const customerOrders = orders.filter(order => order.customerId === customer.id);
                   const totalSpent = customerOrders
                     .filter(order => order.status === 'delivered')
                     .reduce((sum, order) => sum + (order.totalAmount || order.price || 0), 0);
                   
                   return (
-                    <div key={customer.id} className="px-6 py-4 hover:bg-gray-50">
+                    <div 
+                      key={customer.id} 
+                      className="px-6 py-4 hover:bg-gradient-to-r hover:from-purple-50 hover:to-blue-50 transition-all duration-300"
+                      style={{ animationDelay: `${index * 0.1}s` }}
+                    >
                       <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{customer.name}</p>
-                          <p className="text-sm text-gray-500">{customer.phone || 'No phone'}</p>
-                          <p className="text-xs text-gray-400">{customer.email || 'No email'}</p>
+                        <div className="flex items-center space-x-4">
+                          <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-blue-500 rounded-full flex items-center justify-center text-white font-bold text-lg">
+                            {(customer.name || 'U').charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{customer.name}</p>
+                            <p className="text-sm text-gray-500">{customer.phone || 'No phone'}</p>
+                            <p className="text-xs text-gray-400">{customer.email || 'No email'}</p>
+                          </div>
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-medium text-gray-900">
                             {customerOrders.length} order{customerOrders.length !== 1 ? 's' : ''}
                           </p>
-                          <p className="text-sm text-gray-500">Total: ${totalSpent}</p>
+                          <p className="text-lg font-bold text-green-600">
+                            ${totalSpent}
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -1267,9 +1637,11 @@ const TailorDashboard = () => {
                 })
               ) : (
                 <div className="px-6 py-12 text-center">
-                  <User className="mx-auto h-12 w-12 text-gray-400" />
-                  <h3 className="mt-2 text-sm font-medium text-gray-900">No customers</h3>
-                  <p className="mt-1 text-sm text-gray-500">Customers will appear here once you receive orders.</p>
+                  <div className="mx-auto w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center mb-4">
+                    <User className="w-12 h-12 text-gray-400" />
+                  </div>
+                  <h4 className="text-lg font-semibold text-gray-900 mb-2">No customers</h4>
+                  <p className="text-gray-500">Customers will appear here once you receive orders.</p>
                 </div>
               )}
             </div>
@@ -1277,39 +1649,45 @@ const TailorDashboard = () => {
         )}
 
         {activeTab === 'calendar' && (
-          <div className="bg-white shadow rounded-lg">
-            <div className="px-6 py-4 border-b border-gray-200">
+          <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-2xl border border-white/50 overflow-hidden">
+            <div className="bg-gradient-to-r from-gray-50 to-green-50 px-6 py-4 border-b border-gray-200">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-medium text-gray-900">
+                <h3 className="text-xl font-bold text-gray-900">
                   {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
                 </h3>
                 <div className="flex items-center space-x-2">
-                  <button
+                  <EnhancedButton
+                    variant="ghost"
+                    size="sm"
                     onClick={() => navigateMonth(-1)}
-                    className="p-2 text-gray-400 hover:text-gray-600"
+                    className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100"
                   >
                     <ChevronLeft size={20} />
-                  </button>
-                  <button
+                  </EnhancedButton>
+                  <EnhancedButton
+                    variant="outline"
+                    size="sm"
                     onClick={() => setCurrentDate(new Date())}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+                    className="px-4 py-2 text-sm font-medium"
                   >
                     Today
-                  </button>
-                  <button
+                  </EnhancedButton>
+                  <EnhancedButton
+                    variant="ghost"
+                    size="sm"
                     onClick={() => navigateMonth(1)}
-                    className="p-2 text-gray-400 hover:text-gray-600"
+                    className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100"
                   >
                     <ChevronRight size={20} />
-                  </button>
+                  </EnhancedButton>
                 </div>
               </div>
             </div>
             
             <div className="p-6">
-              <div className="grid grid-cols-7 gap-px bg-gray-200 rounded-lg overflow-hidden">
+              <div className="grid grid-cols-7 gap-px bg-gray-200 rounded-lg overflow-hidden shadow-inner">
                 {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                  <div key={day} className="bg-gray-50 py-2 px-3 text-center text-sm font-medium text-gray-500">
+                  <div key={day} className="bg-gradient-to-br from-gray-50 to-gray-100 py-3 px-3 text-center text-sm font-semibold text-gray-600">
                     {day}
                   </div>
                 ))}
@@ -1329,16 +1707,16 @@ const TailorDashboard = () => {
                   return (
                     <div
                       key={i + 1}
-                      className={`bg-white p-2 h-24 border-b border-r cursor-pointer hover:bg-gray-50 ${
-                        isCurrentDay ? 'bg-blue-50' : ''
+                      className={`bg-white p-2 h-24 border-b border-r cursor-pointer hover:bg-gradient-to-br hover:from-blue-50 hover:to-purple-50 transition-all duration-300 ${
+                        isCurrentDay ? 'bg-gradient-to-br from-blue-100 to-purple-100 ring-2 ring-blue-500' : ''
                       }`}
                       onClick={() => {
                         setSelectedDate(date);
                         setShowDayModal(true);
                       }}
                     >
-                      <div className={`text-sm font-medium mb-1 ${
-                        isCurrentDay ? 'text-blue-600' : 'text-gray-900'
+                      <div className={`text-sm font-semibold mb-1 ${
+                        isCurrentDay ? 'text-blue-700' : 'text-gray-900'
                       } ${hasPastDueOrders ? 'text-red-600' : ''}`}>
                         {i + 1}
                       </div>
@@ -1346,9 +1724,9 @@ const TailorDashboard = () => {
                         {dayOrders.slice(0, 2).map(order => (
                           <div
                             key={order.id}
-                            className={`text-xs p-1 rounded truncate ${
+                            className={`text-xs p-1 rounded-md truncate font-medium ${
                               ['pending', 'confirmed', 'in_progress'].includes(order.status) && isPastDue(date)
-                                ? 'bg-red-100 text-red-800'
+                                ? 'bg-red-100 text-red-800 border border-red-200'
                                 : getStatusColor(order.status)
                             }`}
                           >
@@ -1356,7 +1734,7 @@ const TailorDashboard = () => {
                           </div>
                         ))}
                         {dayOrders.length > 2 && (
-                          <div className="text-xs text-gray-500">
+                          <div className="text-xs text-gray-500 font-medium">
                             +{dayOrders.length - 2} more
                           </div>
                         )}
@@ -1369,6 +1747,31 @@ const TailorDashboard = () => {
           </div>
         )}
       </main>
+
+      {/* Navigation Tabs */}
+      <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-white/90 backdrop-blur-lg rounded-2xl shadow-2xl border border-white/50 p-2">
+        <nav className="flex space-x-2">
+          {[
+            { id: 'overview', name: 'Overview', icon: TrendingUp },
+            { id: 'orders', name: 'Orders', icon: ShoppingBag },
+            { id: 'customers', name: 'Customers', icon: User },
+            { id: 'calendar', name: 'Calendar', icon: Calendar }
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center px-6 py-3 rounded-xl font-medium text-sm transition-all duration-300 ${
+                activeTab === tab.id
+                  ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg transform scale-105'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+              }`}
+            >
+              <tab.icon className="h-5 w-5 mr-2" />
+              {tab.name}
+            </button>
+          ))}
+        </nav>
+      </div>
 
       <OrderModal />
       <DayModal />

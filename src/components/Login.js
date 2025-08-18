@@ -8,10 +8,8 @@ import {
   onAuthStateChanged
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
-import './Login.css';
 
 const Login = () => {
-  const navigate = useNavigate();
   const [userType, setUserType] = useState('customer');
   const [isSignup, setIsSignup] = useState(false);
   const [formData, setFormData] = useState({
@@ -24,39 +22,32 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
-  // Check if user is already logged in
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        // User is signed in, check their role and redirect
-        try {
-          // Check if user is a tailor
-          const tailorDoc = await getDoc(doc(db, 'tailors', user.uid));
-          if (tailorDoc.exists()) {
-            navigate('/');
-            return;
-          }
-          
-          // Check if user is a customer
-          const customerDoc = await getDoc(doc(db, 'customers', user.uid));
-          if (customerDoc.exists()) {
-            navigate('/');
-            return;
-          }
-        } catch (error) {
-          console.error('Error checking user role:', error);
-        }
-      }
-    });
+  const navigate = useNavigate();
 
-    return () => unsubscribe();
-  }, [navigate]);
+  useEffect(() => {
+  const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      try {
+        const tailorDoc = await getDoc(doc(db, 'tailors', user.uid));
+        if (tailorDoc.exists()) {
+          navigate('/tailor-dashboard');  // Navigate directly to tailor dashboard
+          return;
+        }
+        const customerDoc = await getDoc(doc(db, 'customers', user.uid));
+        if (customerDoc.exists()) {
+          navigate('/customer-dashboard');  // Navigate directly to customer dashboard
+          return;
+        }
+      } catch (error) {
+        console.error('Error checking user role:', error);
+      }
+    }
+  });
+  return () => unsubscribe();
+}, [navigate]);
 
   const handleInputChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
+    setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
   const resetForm = () => {
@@ -75,63 +66,34 @@ const Login = () => {
     setMessage('');
 
     try {
-      if (isSignup) {
-        // Validate required fields for tailor signup
-        if (!formData.name || !formData.businessName || !formData.phone) {
-          setMessage('Please fill in all required fields.');
+      // Only login for tailors - no signup
+      const userCredential = await signInWithEmailAndPassword(auth, formData.email.toLowerCase().trim(), formData.password);
+      
+      const tailorDoc = await getDoc(doc(db, 'tailors', userCredential.user.uid));
+      if (tailorDoc.exists()) {
+        const tailorData = tailorDoc.data();
+        
+        // Additional security checks
+        if (!tailorData.isActive) {
+          await auth.signOut();
+          setMessage('Your tailor account has been deactivated. Please contact admin.');
           setLoading(false);
           return;
         }
-
-        // Create new tailor account
-        const userCredential = await createUserWithEmailAndPassword(
-          auth, 
-          formData.email, 
-          formData.password
-        );
         
-        // Save tailor data to Firestore
-        await setDoc(doc(db, 'tailors', userCredential.user.uid), {
-          name: formData.name.trim(),
-          email: formData.email.toLowerCase().trim(),
-          businessName: formData.businessName.trim(),
-          phone: formData.phone.trim(),
-          userType: 'tailor',
-          createdAt: new Date(),
-          isActive: true,
-          uid: userCredential.user.uid
-        });
-
-        setMessage('Account created successfully! Redirecting to dashboard...');
-        resetForm();
-        
-        // Redirect after successful signup
-        setTimeout(() => {
-          navigate('/');
-        }, 2000);
-      } else {
-        // Sign in existing tailor
-        const userCredential = await signInWithEmailAndPassword(
-          auth, 
-          formData.email.toLowerCase().trim(), 
-          formData.password
-        );
-        
-        // Check if user is a tailor
-        const tailorDoc = await getDoc(doc(db, 'tailors', userCredential.user.uid));
-        if (tailorDoc.exists()) {
-          const tailorData = tailorDoc.data();
-          setMessage(`Welcome back, ${tailorData.name}! Redirecting to dashboard...`);
-          
-          // Navigate to dashboard
-          setTimeout(() => {
-            navigate('/');
-          }, 1500);
-        } else {
-          // User exists in auth but not in tailors collection
+        if (!tailorData.isVerified) {
           await auth.signOut();
-          setMessage('Error: This account is not registered as a tailor. Please sign up as a tailor or use the customer login.');
+          setMessage('Your tailor account is pending verification. Please contact admin.');
+          setLoading(false);
+          return;
         }
+        
+        setMessage(`Welcome back, ${tailorData.name}! Redirecting to dashboard...`);
+        setTimeout(() => navigate('/tailor-dashboard'), 1500);
+
+      } else {
+        await auth.signOut();
+        setMessage('Access denied: This account is not authorized as a tailor. Please contact admin for tailor account creation.');
       }
     } catch (error) {
       console.error('Tailor auth error:', error);
@@ -139,19 +101,16 @@ const Login = () => {
       
       switch (error.code) {
         case 'auth/user-not-found':
-          errorMessage = 'No account found with this email. Please sign up first.';
+          errorMessage = 'Access denied: No authorized tailor account found with this email.';
           break;
         case 'auth/wrong-password':
           errorMessage = 'Incorrect password. Please try again.';
           break;
-        case 'auth/email-already-in-use':
-          errorMessage = 'An account with this email already exists. Please login instead.';
-          break;
-        case 'auth/weak-password':
-          errorMessage = 'Password should be at least 6 characters long.';
-          break;
         case 'auth/invalid-email':
           errorMessage = 'Please enter a valid email address.';
+          break;
+        case 'auth/too-many-requests':
+          errorMessage = 'Too many failed attempts. Please try again later.';
           break;
         default:
           errorMessage = error.message;
@@ -170,21 +129,14 @@ const Login = () => {
 
     try {
       if (isSignup) {
-        // Validate required fields for customer signup
         if (!formData.name || !formData.phone) {
           setMessage('Please fill in all required fields.');
           setLoading(false);
           return;
         }
 
-        // Create new customer account
-        const userCredential = await createUserWithEmailAndPassword(
-          auth, 
-          formData.email, 
-          formData.password
-        );
+        const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
         
-        // Save customer data to Firestore
         await setDoc(doc(db, 'customers', userCredential.user.uid), {
           name: formData.name.trim(),
           email: formData.email.toLowerCase().trim(),
@@ -198,31 +150,16 @@ const Login = () => {
 
         setMessage(`Welcome ${formData.name}! Account created successfully. Redirecting...`);
         resetForm();
-        
-        // Auto-redirect to dashboard after successful signup
-        setTimeout(() => {
-          navigate('/');
-        }, 2000);
+        setTimeout(() => navigate('/customer-dashboard'), 2000); 
       } else {
-        // Sign in existing customer
-        const userCredential = await signInWithEmailAndPassword(
-          auth, 
-          formData.email.toLowerCase().trim(), 
-          formData.password
-        );
+        const userCredential = await signInWithEmailAndPassword(auth, formData.email.toLowerCase().trim(), formData.password);
         
-        // Check if user is a customer
         const customerDoc = await getDoc(doc(db, 'customers', userCredential.user.uid));
         if (customerDoc.exists()) {
           const customerData = customerDoc.data();
           setMessage(`Welcome back, ${customerData.name}! Redirecting to dashboard...`);
-          
-          // Navigate to dashboard
-          setTimeout(() => {
-            navigate('/');
-          }, 1500);
+          setTimeout(() => navigate('/customer-dashboard'), 1500);
         } else {
-          // User exists in auth but not in customers collection
           await auth.signOut();
           setMessage('Error: This account is not registered as a customer. Please sign up as a customer or use the tailor login.');
         }
@@ -234,7 +171,6 @@ const Login = () => {
       switch (error.code) {
         case 'auth/user-not-found':
           errorMessage = 'No account found with this email. Please sign up first.';
-          break;
         case 'auth/wrong-password':
           errorMessage = 'Incorrect password. Please try again.';
           break;
@@ -275,137 +211,425 @@ const Login = () => {
     setUserType(newUserType);
     resetForm();
     setMessage('');
+    // Reset to login mode when switching to tailor
+    if (newUserType === 'tailor') {
+      setIsSignup(false);
+    }
   };
 
   const handleAuthToggle = (newIsSignup) => {
+    // Don't allow signup for tailors
+    if (userType === 'tailor' && newIsSignup) {
+      return;
+    }
     setIsSignup(newIsSignup);
     resetForm();
     setMessage('');
   };
 
+  const getResponsiveStyles = () => {
+    const isMobile = window.innerWidth <= 768;
+    const isTablet = window.innerWidth > 768 && window.innerWidth <= 1024;
+    const isDesktop = window.innerWidth > 1024;
+
+    return {
+      container: {
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+        padding: isMobile ? '1rem' : '2rem'
+      },
+      card: {
+        display: 'flex',
+        flexDirection: isMobile ? 'column' : 'row',
+        background: 'white',
+        borderRadius: '12px',
+        boxShadow: '0 25px 60px rgba(0, 0, 0, 0.15)',
+        overflow: 'hidden',
+        width: '100%',
+        maxWidth: isMobile ? '100%' : isTablet ? '700px' : '900px',
+        minHeight: isMobile ? 'auto' : '500px'
+      },
+      leftPanel: {
+        flex: isMobile ? 'none' : '1',
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: isMobile ? '2rem 1.5rem' : isTablet ? '2.5rem 2rem' : '3rem 2rem',
+        color: 'white',
+        textAlign: 'center',
+        minHeight: isMobile ? '200px' : 'auto'
+      },
+      rightPanel: {
+        flex: isMobile ? 'none' : '1',
+        padding: isMobile ? '2rem 1.5rem' : isTablet ? '2.5rem 2rem' : '3rem 2.5rem',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center'
+      },
+      welcomeTitle: {
+        fontSize: isMobile ? '1.8rem' : isTablet ? '2rem' : '2.5rem',
+        fontWeight: '700',
+        marginBottom: '1rem',
+        textTransform: 'uppercase',
+        letterSpacing: isMobile ? '1px' : '2px'
+      },
+      welcomeSubtitle: {
+        fontSize: isMobile ? '0.875rem' : '1rem',
+        marginBottom: '2rem',
+        opacity: '0.9',
+        lineHeight: '1.5'
+      },
+      toggleButton: {
+        padding: isMobile ? '0.6rem 1.5rem' : '0.75rem 2rem',
+        border: '2px solid white',
+        borderRadius: '25px',
+        background: 'transparent',
+        color: 'white',
+        fontSize: isMobile ? '0.75rem' : '0.875rem',
+        fontWeight: '500',
+        cursor: 'pointer',
+        transition: 'all 0.3s ease',
+        textTransform: 'uppercase',
+        letterSpacing: '1px'
+      },
+      formTitle: {
+        fontSize: isMobile ? '1.5rem' : isTablet ? '1.75rem' : '2rem',
+        fontWeight: '600',
+        color: '#667eea',
+        textAlign: 'center',
+        marginBottom: isMobile ? '1.5rem' : '2rem'
+      },
+      tabs: {
+        display: 'flex',
+        gap: '0.5rem',
+        marginBottom: '1.5rem',
+        justifyContent: 'center',
+        flexWrap: 'wrap'
+      },
+      tab: {
+        padding: isMobile ? '0.6rem 1.2rem' : '0.5rem 1rem',
+        border: '1px solid #e5e7eb',
+        borderRadius: '6px',
+        background: 'transparent',
+        color: '#6b7280',
+        fontWeight: '500',
+        fontSize: isMobile ? '0.8rem' : '0.75rem',
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
+        minWidth: isMobile ? '100px' : 'auto'
+      },
+      tabActive: {
+        borderColor: '#667eea',
+        background: '#667eea',
+        color: 'white'
+      },
+      inputGroup: {
+        marginBottom: '1rem'
+      },
+      input: {
+        width: '100%',
+        padding: isMobile ? '1rem' : '0.875rem 1rem',
+        border: '2px solid #e5e7eb',
+        borderRadius: '6px',
+        fontSize: isMobile ? '1rem' : '0.875rem',
+        background: 'white',
+        transition: 'border-color 0.2s ease',
+        fontFamily: 'inherit',
+        boxSizing: 'border-box'
+      },
+      submitButton: {
+        width: '100%',
+        padding: isMobile ? '1rem' : '0.875rem',
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        color: 'white',
+        border: 'none',
+        borderRadius: '6px',
+        fontSize: isMobile ? '1rem' : '0.875rem',
+        fontWeight: '600',
+        cursor: 'pointer',
+        transition: 'all 0.3s ease',
+        textTransform: 'uppercase',
+        letterSpacing: '1px',
+        marginTop: '1rem'
+      },
+      submitButtonDisabled: {
+        opacity: '0.7',
+        cursor: 'not-allowed'
+      },
+      link: {
+        color: '#667eea',
+        textDecoration: 'none',
+        fontSize: isMobile ? '1rem' : '0.875rem',
+        cursor: 'pointer',
+        background: 'none',
+        border: 'none',
+        fontFamily: 'inherit',
+        textAlign: 'center',
+        marginTop: '1rem',
+        padding: isMobile ? '0.5rem' : '0'
+      },
+      message: {
+        padding: '0.75rem 1rem',
+        borderRadius: '6px',
+        fontSize: isMobile ? '1rem' : '0.875rem',
+        textAlign: 'center',
+        marginTop: '1rem'
+      },
+      messageSuccess: {
+        background: '#f0fdf4',
+        color: '#166534',
+        border: '1px solid #bbf7d0'
+      },
+      messageError: {
+        background: '#fef2f2',
+        color: '#dc2626',
+        border: '1px solid #fecaca'
+      },
+      mobileSignUpSection: {
+        marginTop: '2rem',
+        padding: '1.5rem',
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        borderRadius: '12px',
+        textAlign: 'center',
+        color: 'white'
+      },
+      divider: {
+        position: 'relative',
+        margin: '1rem 0',
+        textAlign: 'center'
+      },
+      dividerText: {
+        background: 'white',
+        padding: '0 1rem',
+        color: '#9ca3af',
+        fontSize: '0.875rem'
+      },
+      mobileSignUpTitle: {
+        fontSize: '1.25rem',
+        fontWeight: '600',
+        marginBottom: '0.5rem',
+        textTransform: 'uppercase',
+        letterSpacing: '1px'
+      },
+      mobileSignUpSubtitle: {
+        fontSize: '0.875rem',
+        marginBottom: '1rem',
+        opacity: '0.9',
+        lineHeight: '1.4'
+      },
+      mobileSignUpButton: {
+        padding: '0.75rem 2rem',
+        border: '2px solid white',
+        borderRadius: '25px',
+        background: 'transparent',
+        color: 'white',
+        fontSize: '0.875rem',
+        fontWeight: '500',
+        cursor: 'pointer',
+        transition: 'all 0.3s ease',
+        textTransform: 'uppercase',
+        letterSpacing: '1px'
+      }
+    };
+  };
+
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowWidth(window.innerWidth);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const styles = getResponsiveStyles();
+
+  const isMobile = window.innerWidth <= 768;
+
   return (
-    <div className="login-container">
-      <div className="login-card">
-        <h1>Tailor Management App</h1>
-        
-        {/* User Type Selector */}
-        <div className="user-type-selector">
-          <button 
-            className={userType === 'customer' ? 'active' : ''}
-            onClick={() => handleUserTypeChange('customer')}
-          >
-            Customer
-          </button>
-          <button 
-            className={userType === 'tailor' ? 'active' : ''}
-            onClick={() => handleUserTypeChange('tailor')}
-          >
-            Tailor (Admin)
-          </button>
-        </div>
+    <div style={styles.container}>
+      <div style={styles.card}>
+        {/* Left Panel - Sign Up (Desktop/Tablet only) - Hide for tailors */}
+        {!isMobile && userType === 'customer' && (
+          <div style={styles.leftPanel}>
+            <h1 style={styles.welcomeTitle}>New Here?</h1>
+            <p style={styles.welcomeSubtitle}>
+              Create your account and start your journey with our tailoring service.
+            </p>
+            <button 
+              style={styles.toggleButton}
+              onClick={() => handleAuthToggle(true)}
+            >
+              Sign Up
+            </button>
+          </div>
+        )}
 
-        {/* Login/Signup Toggle */}
-        <div className="auth-toggle">
-          <button 
-            className={!isSignup ? 'active' : ''}
-            onClick={() => handleAuthToggle(false)}
-          >
-            Login
-          </button>
-          <button 
-            className={isSignup ? 'active' : ''}
-            onClick={() => handleAuthToggle(true)}
-          >
-            Sign Up
-          </button>
-        </div>
+        {/* Left Panel - For Tailors (Desktop/Tablet only) */}
+        {!isMobile && userType === 'tailor' && (
+          <div style={styles.leftPanel}>
+            <h1 style={styles.welcomeTitle}>Tailor Login</h1>
+            <p style={styles.welcomeSubtitle}>
+              Access your tailor dashboard with your credentials.
+            </p>
+          </div>
+        )}
 
-        {/* Form */}
-        <form onSubmit={userType === 'tailor' ? handleTailorAuth : handleCustomerAuth}>
-          <h2>
-            {userType === 'tailor' ? 'Tailor' : 'Customer'} 
-            {isSignup ? ' Sign Up' : ' Login'}
+        {/* Right Panel - Form */}
+        <div style={styles.rightPanel}>
+          <h2 style={styles.formTitle}>
+            {userType === 'tailor' ? 'Tailor Login' : (isSignup ? 'Create Account' : 'Customer Login')}
           </h2>
 
-          {isSignup && (
-            <input
-              type="text"
-              name="name"
-              placeholder="Full Name *"
-              value={formData.name}
-              onChange={handleInputChange}
-              required
-            />
+          {/* User Type Selection */}
+          <div style={styles.tabs}>
+            <button
+              onClick={() => handleUserTypeChange('customer')}
+              style={{
+                ...styles.tab,
+                ...(userType === 'customer' ? styles.tabActive : {})
+              }}
+            >
+              Customer
+            </button>
+            <button
+              onClick={() => handleUserTypeChange('tailor')}
+              style={{
+                ...styles.tab,
+                ...(userType === 'tailor' ? styles.tabActive : {})
+              }}
+            >
+              Tailor
+            </button>
+          </div>
+
+          {/* Form Fields - Only show signup fields for customers */}
+          {isSignup && userType === 'customer' && (
+            <div style={styles.inputGroup}>
+              <input
+                type="text"
+                name="name"
+                value={formData.name}
+                onChange={handleInputChange}
+                style={styles.input}
+                placeholder="Full Name"
+                required
+              />
+            </div>
           )}
 
-          {isSignup && userType === 'tailor' && (
-            <input
-              type="text"
-              name="businessName"
-              placeholder="Business Name *"
-              value={formData.businessName}
-              onChange={handleInputChange}
-              required
-            />
+          {isSignup && userType === 'customer' && (
+            <div style={styles.inputGroup}>
+              <input
+                type="tel"
+                name="phone"
+                value={formData.phone}
+                onChange={handleInputChange}
+                style={styles.input}
+                placeholder="Phone Number"
+                required
+              />
+            </div>
           )}
 
-          {isSignup && (
+          <div style={styles.inputGroup}>
             <input
-              type="tel"
-              name="phone"
-              placeholder="Phone Number *"
-              value={formData.phone}
+              type="email"
+              name="email"
+              value={formData.email}
               onChange={handleInputChange}
+              style={styles.input}
+              placeholder="Email"
               required
             />
-          )}
+          </div>
 
-          <input
-            type="email"
-            name="email"
-            placeholder="Email Address *"
-            value={formData.email}
-            onChange={handleInputChange}
-            required
-          />
+          <div style={styles.inputGroup}>
+            <input
+              type="password"
+              name="password"
+              value={formData.password}
+              onChange={handleInputChange}
+              style={styles.input}
+              placeholder="Password"
+              minLength="6"
+              required
+            />
+          </div>
 
-          <input
-            type="password"
-            name="password"
-            placeholder="Password (min 6 characters) *"
-            value={formData.password}
-            onChange={handleInputChange}
-            minLength="6"
-            required
-          />
-
-          <button type="submit" disabled={loading}>
-            {loading ? 'Processing...' : (isSignup ? 'Create Account' : 'Login')}
+          <button 
+            onClick={userType === 'tailor' ? handleTailorAuth : handleCustomerAuth}
+            disabled={loading} 
+            style={{
+              ...styles.submitButton,
+              ...(loading ? styles.submitButtonDisabled : {})
+            }}
+          >
+            {loading ? (
+              userType === 'tailor' ? 'Signing In...' : (isSignup ? 'Creating Account...' : 'Signing In...')
+            ) : (
+              userType === 'tailor' ? 'Sign In' : (isSignup ? 'Create Account' : 'Sign In')
+            )}
           </button>
 
-          {!isSignup && (
+          {(
             <button 
               type="button" 
               onClick={handleForgotPassword}
-              className="forgot-password"
+              style={styles.link}
               disabled={loading}
             >
               Forgot Password?
             </button>
           )}
-        </form>
 
-        {message && (
-          <div className={`message ${message.includes('Error') || message.includes('error') ? 'error' : 'success'}`}>
-            {message}
-          </div>
-        )}
+          {/* Only show auth toggle for customers */}
+          {userType === 'customer' && (
+            <button 
+              type="button"
+              onClick={() => handleAuthToggle(!isSignup)}
+              style={styles.link}
+            >
+              {isSignup ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
+            </button>
+          )}
 
-        {isSignup && (
-          <div className="signup-note">
-            <small>* Required fields</small>
-          </div>
-        )}
+          {/* Mobile Sign Up Section - Only show for customers when not in signup mode */}
+          {isMobile && !isSignup && userType === 'customer' && (
+            <div style={styles.mobileSignUpSection}>
+              <div style={styles.divider}>
+                <span style={styles.dividerText}>or</span>
+              </div>
+              <h3 style={styles.mobileSignUpTitle}>New Here?</h3>
+              <p style={styles.mobileSignUpSubtitle}>
+                Create your account and start your journey with our tailoring service.
+              </p>
+              <button 
+                style={styles.mobileSignUpButton}
+                onClick={() => handleAuthToggle(true)}
+              >
+                Sign Up
+              </button>
+            </div>
+          )}
+
+          {message && (
+            <div style={{
+              ...styles.message,
+              ...(message.includes('Error') || message.includes('error') ? styles.messageError : styles.messageSuccess)
+            }}>
+              {message}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
