@@ -51,6 +51,7 @@ const CustomerDashboard = () => {
     }
   });
   const [loading, setLoading] = useState(true);
+  const [ordersLoading, setOrdersLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('orders');
   const [showOrderForm, setShowOrderForm] = useState(false);
   const [currentOrder, setCurrentOrder] = useState(null);
@@ -62,15 +63,19 @@ const CustomerDashboard = () => {
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [photoUrls, setPhotoUrls] = useState([]);
 
-  // Notification states - Now functional
+  // Notification states
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
   const [lastChecked, setLastChecked] = useState(new Date());
   
-  // Use refs to track cleanup functions
-  const unsubscribeRef = useRef(null);
+  // Use refs to track cleanup functions and prevent memory leaks
+  const unsubscribeOrdersRef = useRef(null);
+  const unsubscribeAuthRef = useRef(null);
   const userId = useRef(null);
+  const isInitialLoad = useRef(true);
+  const previousOrders = useRef(new Map());
+  const isMountedRef = useRef(true);
   
   const [orderForm, setOrderForm] = useState({
     garmentType: '',
@@ -89,21 +94,291 @@ const CustomerDashboard = () => {
     inspirationPhotos: []
   });
 
-  // Fetch customer data and orders when component mounts
+  // Debug state (remove in production)
+  const [debugInfo, setDebugInfo] = useState({
+    authUser: null,
+    ordersCount: 0,
+    listenerActive: false
+  });
+
+  // Update debug info when orders change
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      console.log('Auth state changed:', user);
+    setDebugInfo(prev => ({
+      ...prev,
+      authUser: auth.currentUser?.uid || null,
+      ordersCount: orders.length,
+      listenerActive: !!unsubscribeOrdersRef.current
+    }));
+  }, [orders]);
+
+  // FIXED: Separate orders fetching function with better error handling
+  const setupOrdersListener = async (customerId) => {
+    if (!customerId || !isMountedRef.current) {
+      console.log('❌ Cannot setup orders - no customerId or component unmounted');
+      return;
+    }
+
+    try {
+      console.log('🔄 Setting up orders listener for customer:', customerId);
+      setOrdersLoading(true);
+      
+      // Clean up existing listener first
+      if (unsubscribeOrdersRef.current) {
+        console.log('🧹 Cleaning up existing orders listener');
+        unsubscribeOrdersRef.current();
+        unsubscribeOrdersRef.current = null;
+      }
+
+      // Create the query
+      const ordersQuery = query(
+        collection(db, 'orders'), 
+        where('customerId', '==', customerId),
+        orderBy('createdAt', 'desc')
+      );
+      
+      console.log('📡 Setting up real-time orders listener...');
+      
+      // Setup the listener
+      const unsubscribe = onSnapshot(
+        ordersQuery,
+        {
+          includeMetadataChanges: false // Only get actual data changes
+        },
+        (snapshot) => {
+          if (!isMountedRef.current) {
+            console.log('⚠️ Component unmounted, ignoring snapshot');
+            return;
+          }
+
+          try {
+            console.log(`📊 Orders snapshot received: ${snapshot.docs.length} orders`);
+            
+            const currentOrders = snapshot.docs.map(doc => {
+              const data = doc.data();
+              return {
+                id: doc.id,
+                ...data,
+                // Convert Firestore timestamps to proper format
+                createdAt: data.createdAt?.toDate?.() || new Date(data.createdAt),
+                updatedAt: data.updatedAt?.toDate?.() || new Date(data.updatedAt),
+                dueDate: data.dueDate?.toDate?.() || (data.dueDate ? new Date(data.dueDate) : null)
+              };
+            });
+
+            console.log('📋 Processed orders:', currentOrders.map(o => ({ 
+              id: o.id.substring(0, 8), 
+              garmentType: o.garmentType, 
+              status: o.status 
+            })));
+            
+            // ALWAYS update orders state
+            setOrders(currentOrders);
+            setOrdersLoading(false);
+            
+            // Handle notifications only after initial load
+            if (!isInitialLoad.current && previousOrders.current.size > 0) {
+              console.log('🔔 Processing notifications for order changes...');
+              processOrderNotifications(currentOrders, previousOrders.current);
+            } else {
+              console.log('⏳ Initial load or no previous orders - skipping notifications');
+              isInitialLoad.current = false;
+            }
+            
+            // Update previous orders map for future comparisons
+            const newPreviousOrders = new Map();
+            currentOrders.forEach(order => {
+              newPreviousOrders.set(order.id, { ...order });
+            });
+            previousOrders.current = newPreviousOrders;
+            
+          } catch (snapshotError) {
+            console.error('❌ Error processing orders snapshot:', snapshotError);
+            if (isMountedRef.current) {
+              setOrdersLoading(false);
+            }
+          }
+        },
+        (error) => {
+          console.error('❌ Orders listener error:', error);
+          if (isMountedRef.current) {
+            setOrdersLoading(false);
+            
+            // Retry connection after delay if it's a network error
+            if (error.code === 'unavailable' || error.code === 'permission-denied') {
+              console.log('🔄 Retrying orders setup due to network error...');
+              setTimeout(() => {
+                if (isMountedRef.current && userId.current) {
+                  setupOrdersListener(userId.current);
+                }
+              }, 3000);
+            }
+          }
+        }
+      );
+
+      // Store the unsubscribe function
+      unsubscribeOrdersRef.current = unsubscribe;
+      console.log('✅ Orders listener setup complete');
+      
+    } catch (error) {
+      console.error('❌ Error setting up orders listener:', error);
+      if (isMountedRef.current) {
+        setOrdersLoading(false);
+        
+        // Retry setup after delay for certain errors
+        if (error.code !== 'permission-denied') {
+          setTimeout(() => {
+            if (isMountedRef.current && userId.current) {
+              console.log('🔄 Retrying orders setup after error...');
+              setupOrdersListener(userId.current);
+            }
+          }, 5000);
+        }
+      }
+    }
+  };
+
+  // FIXED: Better notification processing
+  const processOrderNotifications = (currentOrders, previousOrdersMap) => {
+    try {
+      const newNotifications = [];
+      
+      currentOrders.forEach(currentOrder => {
+        const orderId = currentOrder.id;
+        const previousOrder = previousOrdersMap.get(orderId);
+        
+        if (previousOrder) {
+          // Check if this update was made by tailor
+          const wasModifiedByTailor = currentOrder.modifiedBy === 'tailor';
+          
+          if (wasModifiedByTailor) {
+            // Check for meaningful changes
+            const hasStatusChange = previousOrder.status !== currentOrder.status;
+            const hasProgressChange = (previousOrder.progress || 0) !== (currentOrder.progress || 0);
+            
+            if (hasStatusChange || hasProgressChange) {
+              const notification = createOrderNotification(currentOrder, hasStatusChange, hasProgressChange);
+              if (notification) {
+                newNotifications.push(notification);
+              }
+            }
+          }
+        }
+      });
+
+      if (newNotifications.length > 0) {
+        console.log('🔔 Adding notifications:', newNotifications);
+        setNotifications(prev => [
+          ...newNotifications,
+          ...prev.slice(0, 49) // Keep only last 50 notifications
+        ]);
+        setUnreadCount(prev => prev + newNotifications.length);
+        
+        // Show browser notifications if permission granted
+        if (Notification.permission === 'granted') {
+          newNotifications.forEach(notification => {
+            new Notification(notification.title, {
+              body: notification.message,
+              icon: '/favicon.ico',
+              tag: notification.id
+            });
+          });
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ Error processing notifications:', error);
+    }
+  };
+
+  // Helper function to create notifications
+  const createOrderNotification = (order, hasStatusChange, hasProgressChange) => {
+    let notificationType = 'order_updated';
+    let title = 'Order Updated';
+    let message = `Your order has been updated`;
+    
+    if (hasStatusChange) {
+      switch (order.status) {
+        case 'confirmed':
+          title = 'Order Confirmed';
+          message = `Your ${order.garmentType || 'order'} has been confirmed by the tailor`;
+          notificationType = 'status_confirmed';
+          break;
+        case 'in_progress':
+          title = 'Work Started';
+          message = `Work has started on your ${order.garmentType || 'order'}`;
+          notificationType = 'status_in_progress';
+          break;
+        case 'ready':
+          title = 'Order Ready!';
+          message = `Your ${order.garmentType || 'order'} is ready for pickup/delivery`;
+          notificationType = 'status_ready';
+          break;
+        case 'delivered':
+          title = 'Order Completed';
+          message = `Your ${order.garmentType || 'order'} has been completed`;
+          notificationType = 'status_delivered';
+          break;
+        case 'cancelled':
+          title = 'Order Cancelled';
+          message = `Your ${order.garmentType || 'order'} has been cancelled`;
+          notificationType = 'status_cancelled';
+          break;
+        default:
+          message = `Your ${order.garmentType || 'order'} status changed to ${order.status}`;
+      }
+    } else if (hasProgressChange) {
+      title = 'Progress Update';
+      message = `Your ${order.garmentType || 'order'} is now ${order.progress || 0}% complete`;
+      notificationType = 'progress_update';
+    }
+    
+    return {
+      id: `tailor-update-${order.id}-${Date.now()}`,
+      type: notificationType,
+      title: title,
+      message: message,
+      orderId: order.id,
+      timestamp: new Date(),
+      read: false,
+      urgent: order.status === 'ready' || order.status === 'cancelled'
+    };
+  };
+
+  // FIXED: Main useEffect with better auth handling
+  useEffect(() => {
+    console.log('🚀 CustomerDashboard mounting...');
+    isMountedRef.current = true;
+    
+    const handleAuthStateChange = async (user) => {
+      console.log('👤 Auth state changed:', user?.uid || 'No user');
+      
+      if (!isMountedRef.current) {
+        console.log('⚠️ Component unmounted, ignoring auth change');
+        return;
+      }
       
       if (user) {
         userId.current = user.uid;
+        isInitialLoad.current = true; // Reset for new user
+        
         try {
-          // Fetch customer data
-          const customerDoc = await getDoc(doc(db, 'customers', user.uid));
-          console.log('Customer doc exists:', customerDoc.exists());
+          console.log('📄 Fetching customer data for:', user.uid);
+          
+          // Fetch customer data with timeout
+          const customerDocPromise = getDoc(doc(db, 'customers', user.uid));
+          const customerDoc = await Promise.race([
+            customerDocPromise,
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Customer fetch timeout')), 10000)
+            )
+          ]);
+          
+          if (!isMountedRef.current) return;
           
           if (customerDoc.exists()) {
             const customerData = customerDoc.data();
-            console.log('Customer data from Firestore:', customerData);
+            console.log('✅ Customer data loaded successfully');
             
             setCustomerInfo({
               name: customerData.name || '',
@@ -119,192 +394,58 @@ const CustomerDashboard = () => {
               }
             });
 
-            // Set up real-time order listener for this customer
-            setupOrderListener(user.uid);
+            // Setup orders listener after customer data is loaded
+            await setupOrdersListener(user.uid);
+            
           } else {
-            console.log('Customer document does not exist, redirecting to login');
-            navigate('/login');
+            console.log('❌ Customer document does not exist');
+            if (isMountedRef.current) {
+              navigate('/login');
+            }
           }
         } catch (error) {
-          console.error('Error fetching customer data:', error);
+          console.error('❌ Error in auth state change handler:', error);
+          if (isMountedRef.current) {
+            setOrdersLoading(false);
+            // Don't redirect on fetch errors, user might still be valid
+            if (error.message !== 'Customer fetch timeout') {
+              navigate('/login');
+            }
+          }
         } finally {
-          setLoading(false);
+          if (isMountedRef.current) {
+            setLoading(false);
+          }
         }
       } else {
-        console.log('No user logged in, redirecting to login');
-        navigate('/login');
+        console.log('🚪 No user, redirecting to login');
+        if (isMountedRef.current) {
+          setLoading(false);
+          setOrdersLoading(false);
+          navigate('/login');
+        }
       }
-    });
+    };
 
+    // Setup auth state listener
+    unsubscribeAuthRef.current = onAuthStateChanged(auth, handleAuthStateChange);
+
+    // Cleanup function
     return () => {
-      unsubscribe();
-      // Clean up order listener
-      if (unsubscribeRef.current) {
-        unsubscribeRef.current();
+      console.log('🧹 CustomerDashboard unmounting...');
+      isMountedRef.current = false;
+      
+      if (unsubscribeAuthRef.current) {
+        unsubscribeAuthRef.current();
+        unsubscribeAuthRef.current = null;
+      }
+      
+      if (unsubscribeOrdersRef.current) {
+        unsubscribeOrdersRef.current();
+        unsubscribeOrdersRef.current = null;
       }
     };
   }, [navigate]);
-
-  // Set up real-time order listener for notifications
-  const setupOrderListener = (customerId) => {
-    try {
-      // Clean up existing listener if any
-      if (unsubscribeRef.current) {
-        unsubscribeRef.current();
-      }
-
-      const ordersQuery = query(
-        collection(db, 'orders'), 
-        where('customerId', '==', customerId),
-        orderBy('createdAt', 'desc')
-      );
-      
-      // Store initial orders to compare against
-      let initialOrdersLoaded = false;
-      let previousOrders = new Map();
-      
-      const unsubscribe = onSnapshot(ordersQuery, 
-        (snapshot) => {
-          try {
-            const newNotifications = [];
-            const allOrders = snapshot.docs.map(doc => {
-              const data = doc.data();
-              return {
-                id: doc.id,
-                ...data
-              };
-            });
-
-            // On first load, just store the orders without notifications
-            if (!initialOrdersLoaded) {
-              allOrders.forEach(order => {
-                previousOrders.set(order.id, order);
-              });
-              setOrders(allOrders);
-              initialOrdersLoaded = true;
-              return;
-            }
-
-            // Process changes only after initial load
-            allOrders.forEach(currentOrder => {
-              const orderId = currentOrder.id;
-              const previousOrder = previousOrders.get(orderId);
-              
-              if (previousOrder) {
-                // EXISTING ORDER - Check for tailor updates
-                const wasModifiedByTailor = currentOrder.modifiedBy === 'tailor';
-                
-                // Only notify if order was modified by tailor
-                if (wasModifiedByTailor) {
-                  // Check if there are meaningful changes
-                  const hasStatusChange = previousOrder.status !== currentOrder.status;
-                  const hasProgressChange = previousOrder.progress !== currentOrder.progress;
-                  
-                  if (hasStatusChange || hasProgressChange) {
-                    let notificationType = 'order_updated';
-                    let title = 'Order Updated';
-                    let message = `Your order has been updated`;
-                    
-                    // Specific notifications based on status changes
-                    if (hasStatusChange) {
-                      switch (currentOrder.status) {
-                        case 'confirmed':
-                          title = 'Order Confirmed';
-                          message = `Your ${currentOrder.garmentType || 'order'} has been confirmed by the tailor`;
-                          notificationType = 'status_confirmed';
-                          break;
-                        case 'in_progress':
-                          title = 'Work Started';
-                          message = `Work has started on your ${currentOrder.garmentType || 'order'}`;
-                          notificationType = 'status_in_progress';
-                          break;
-                        case 'ready':
-                          title = 'Order Ready!';
-                          message = `Your ${currentOrder.garmentType || 'order'} is ready for pickup/delivery`;
-                          notificationType = 'status_ready';
-                          break;
-                        case 'delivered':
-                          title = 'Order Completed';
-                          message = `Your ${currentOrder.garmentType || 'order'} has been completed`;
-                          notificationType = 'status_delivered';
-                          break;
-                        case 'cancelled':
-                          title = 'Order Cancelled';
-                          message = `Your ${currentOrder.garmentType || 'order'} has been cancelled`;
-                          notificationType = 'status_cancelled';
-                          break;
-                        default:
-                          message = `Your ${currentOrder.garmentType || 'order'} status changed to ${currentOrder.status}`;
-                      }
-                    } else if (hasProgressChange) {
-                      title = 'Progress Update';
-                      message = `Your ${currentOrder.garmentType || 'order'} is now ${currentOrder.progress || 0}% complete`;
-                      notificationType = 'progress_update';
-                    }
-                    
-                    newNotifications.push({
-                      id: `tailor-update-${orderId}-${Date.now()}`,
-                      type: notificationType,
-                      title: title,
-                      message: message,
-                      orderId: orderId,
-                      timestamp: new Date(),
-                      read: false,
-                      urgent: currentOrder.status === 'ready' || currentOrder.status === 'cancelled'
-                    });
-                  }
-                }
-              }
-              
-              // Update previous orders map
-              previousOrders.set(orderId, currentOrder);
-            });
-
-            // Update orders state
-            setOrders(allOrders);
-
-            // Handle new notifications
-            if (newNotifications.length > 0) {
-              setNotifications(prev => [
-                ...newNotifications,
-                ...prev.slice(0, 49) // Keep only last 50 notifications
-              ]);
-              setUnreadCount(prev => prev + newNotifications.length);
-              
-              // Show browser notifications if permission granted
-              if (Notification.permission === 'granted') {
-                newNotifications.forEach(notification => {
-                  new Notification(notification.title, {
-                    body: notification.message,
-                    icon: '/favicon.ico',
-                    tag: notification.id
-                  });
-                });
-              }
-            }
-            
-          } catch (snapshotError) {
-            console.error('Error processing snapshot:', snapshotError);
-          }
-        },
-        (error) => {
-          console.error('Orders listener error:', error);
-          // Try to reconnect after a delay
-          setTimeout(() => {
-            if (auth.currentUser && userId.current) {
-              setupOrderListener(userId.current);
-            }
-          }, 5000);
-        }
-      );
-
-      // Store the unsubscribe function
-      unsubscribeRef.current = unsubscribe;
-      
-    } catch (error) {
-      console.error('Error setting up order listener:', error);
-    }
-  };
 
   // Request notification permission on component mount
   useEffect(() => {
@@ -426,9 +567,18 @@ const CustomerDashboard = () => {
   const handleSignOut = async () => {
     try {
       // Clean up listeners before logout
-      if (unsubscribeRef.current) {
-        unsubscribeRef.current();
+      isMountedRef.current = false;
+      
+      if (unsubscribeOrdersRef.current) {
+        unsubscribeOrdersRef.current();
+        unsubscribeOrdersRef.current = null;
       }
+      
+      if (unsubscribeAuthRef.current) {
+        unsubscribeAuthRef.current();
+        unsubscribeAuthRef.current = null;
+      }
+      
       await signOut(auth);
       navigate('/login');
     } catch (error) {
@@ -833,7 +983,16 @@ const CustomerDashboard = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
-      {/* Extended Header Banner - Similar to Tailor Dashboard */}
+      {/* Debug Info - Remove in production */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="fixed bottom-4 right-4 bg-black text-white p-2 text-xs rounded z-50">
+          User: {debugInfo.authUser}<br/>
+          Orders: {debugInfo.ordersCount}<br/>
+          Listener: {debugInfo.listenerActive ? 'Active' : 'Inactive'}
+        </div>
+      )}
+
+      {/* Extended Header Banner */}
       <header className="relative bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 text-white shadow-2xl overflow-visible z-10">
         <div className="absolute inset-0 bg-gradient-to-r from-purple-600/20 to-indigo-600/20" />
         <div className="absolute inset-0 opacity-10" style={{
@@ -989,7 +1148,12 @@ const CustomerDashboard = () => {
           </div>
 
           <div className="overflow-x-auto">
-            {filterOrders().length === 0 ? (
+            {ordersLoading ? (
+              <div className="p-12 text-center">
+                <div className="w-8 h-8 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                <p className="text-slate-600">Loading your orders...</p>
+              </div>
+            ) : filterOrders().length === 0 ? (
               <div className="p-12 text-center">
                 <div className="bg-gradient-to-br from-slate-50 to-gray-100 rounded-2xl p-8 max-w-md mx-auto">
                   <svg className="w-16 h-16 text-slate-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1031,12 +1195,12 @@ const CustomerDashboard = () => {
                       <td className="px-8 py-6 whitespace-nowrap">
                         <div className="w-full">
                           <div className="flex justify-between items-center mb-1">
-                            <span className="text-xs text-slate-600 font-medium">{order.progress}%</span>
+                            <span className="text-xs text-slate-600 font-medium">{order.progress || 0}%</span>
                           </div>
                           <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
                             <div 
-                              className={`h-full rounded-full bg-gradient-to-r ${getProgressColor(order.progress)} transition-all duration-500 ease-out`}
-                              style={{ width: `${order.progress}%` }}
+                              className={`h-full rounded-full bg-gradient-to-r ${getProgressColor(order.progress || 0)} transition-all duration-500 ease-out`}
+                              style={{ width: `${order.progress || 0}%` }}
                             ></div>
                           </div>
                         </div>
@@ -1077,7 +1241,7 @@ const CustomerDashboard = () => {
         </div>
       </main>
 
-      {/* Enhanced Order Form Modal */}
+      {/* Order Form Modal - Rest of the component remains the same */}
       {showOrderForm && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-white/50">

@@ -394,13 +394,16 @@
             }
         }
     </style>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 </head>
 <body>
     <!-- Navigation Bar -->
     <nav class="navbar">
         <div class="logo">XYZ SHOP</div>
         <ul class="nav-links" id="navLinks">
-            <li><a href="#home">Home</a></li>
+            <li><a href="#" id="homeLink">Home</a></li>
             <li><a href="about.html">About</a></li>
             <li><a href="contact.html">Contact</a></li>
         </ul>
@@ -650,65 +653,182 @@
     </script>
 
     <script>
+        // Your web app's Firebase configuration
+          const firebaseConfig = {
+          apiKey: "REACT_APP_FIREBASE_API_KEY",
+          authDomain: "REACT_APP_FIREBASE_AUTH_DOMAIN",
+          projectId: "REACT_APP_FIREBASE_PROJECT_ID",
+          storageBucket: "REACT_APP_FIREBASE_STORAGE_BUCKET",
+          messagingSenderId: "REACT_APP_FIREBASE_MESSAGING_SENDER_ID",
+          appId: "REACT_APP_FIREBASE_APP_ID"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        // Store user role globally
+        let userRole = null;
+        let userDashboardUrl = '/login';
+
+        // Function to check user role and store it
+        async function checkUserRole(user) {
+            if (!user) {
+                userRole = null;
+                userDashboardUrl = '/login';
+                return null;
+            }
+
+            try {
+                console.log('Checking role for user:', user.email);
+                
+                // Check if user is a tailor
+                const tailorDoc = await db.collection('tailors').doc(user.uid).get();
+                if (tailorDoc.exists) {
+                    console.log('User is a tailor');
+                    userRole = 'tailor';
+                    userDashboardUrl = '/TailorDashboard';
+                    return 'tailor';
+                }
+                
+                // Check if user is a customer
+                const customerDoc = await db.collection('customers').doc(user.uid).get();
+                if (customerDoc.exists) {
+                    console.log('User is a customer');
+                    userRole = 'customer';
+                    userDashboardUrl = '/CustomerDashboard';
+                    return 'customer';
+                }
+                
+                console.log('User found but no role assigned');
+                userRole = null;
+                userDashboardUrl = '/login';
+                return null;
+                
+            } catch (error) {
+                console.error('Error checking user role:', error);
+                userRole = null;
+                userDashboardUrl = '/login';
+                return null;
+            }
+        }
+
+        // Function to handle home link click
+        function handleHomeClick(event) {
+            event.preventDefault();
+            
+            // Check if we have cached user role
+            if (userRole === 'tailor') {
+                window.location.href = '/TailorDashboard';
+            } else if (userRole === 'customer') {
+                window.location.href = '/CustomerDashboard';
+            } else {
+                // If no cached role, check current auth state
+                const currentUser = auth.currentUser;
+                if (currentUser) {
+                    // User is logged in but role not cached, check role first
+                    checkUserRole(currentUser).then(() => {
+                        window.location.href = userDashboardUrl;
+                    });
+                } else {
+                    // No user logged in, go to login
+                    window.location.href = '/login';
+                }
+            }
+        }
+
+        // Function to update home link
+        function updateHomeLink() {
+            const homeLink = document.getElementById('homeLink');
+            
+            if (!homeLink) {
+                console.error('Home link element not found');
+                return;
+            }
+            
+            // Always keep the text as "Home"
+            homeLink.textContent = 'Home';
+            
+            // Remove any existing click listeners
+            homeLink.removeEventListener('click', handleHomeClick);
+            
+            // Add click listener
+            homeLink.addEventListener('click', handleHomeClick);
+            
+            auth.onAuthStateChanged(async (user) => {
+                if (user) {
+                    console.log('User logged in:', user.email);
+                    // Check and cache user role
+                    await checkUserRole(user);
+                } else {
+                    console.log('No user logged in');
+                    userRole = null;
+                    userDashboardUrl = '/login';
+                }
+                
+                // Always keep the text as "Home" regardless of auth state
+                homeLink.textContent = 'Home';
+            });
+        }
+
+        // Call the function when page loads
+        window.addEventListener('load', updateHomeLink);
+        
+        // Also call it when DOM is ready (backup)
+        document.addEventListener('DOMContentLoaded', updateHomeLink);
+
         // Mobile menu toggle functionality
         const menuToggle = document.getElementById('menuToggle');
         const navLinks = document.getElementById('navLinks');
 
-        menuToggle.addEventListener('click', function() {
-            navLinks.classList.toggle('active');
-            
-            // Animate hamburger menu
-            const spans = menuToggle.querySelectorAll('span');
-            spans.forEach((span, index) => {
-                if (navLinks.classList.contains('active')) {
-                    if (index === 0) span.style.transform = 'rotate(-45deg) translate(-5px, 6px)';
-                    if (index === 1) span.style.opacity = '0';
-                    if (index === 2) span.style.transform = 'rotate(45deg) translate(-5px, -6px)';
-                } else {
-                    span.style.transform = '';
-                    span.style.opacity = '';
+        if (menuToggle && navLinks) {
+            menuToggle.addEventListener('click', function() {
+                navLinks.classList.toggle('active');
+                
+                // Animate hamburger menu
+                const spans = menuToggle.querySelectorAll('span');
+                spans.forEach((span, index) => {
+                    if (navLinks.classList.contains('active')) {
+                        if (index === 0) span.style.transform = 'rotate(-45deg) translate(-5px, 6px)';
+                        if (index === 1) span.style.opacity = '0';
+                        if (index === 2) span.style.transform = 'rotate(45deg) translate(-5px, -6px)';
+                    } else {
+                        span.style.transform = '';
+                        span.style.opacity = '';
+                    }
+                });
+            });
+
+            // Close mobile menu when clicking on a link
+            document.querySelectorAll('.nav-links a').forEach(link => {
+                link.addEventListener('click', function() {
+                    navLinks.classList.remove('active');
+                    const spans = menuToggle.querySelectorAll('span');
+                    spans.forEach(span => {
+                        span.style.transform = '';
+                        span.style.opacity = '';
+                    });
+                });
+            });
+
+            // Close mobile menu when clicking outside
+            document.addEventListener('click', function(event) {
+                if (!menuToggle.contains(event.target) && !navLinks.contains(event.target)) {
+                    navLinks.classList.remove('active');
+                    const spans = menuToggle.querySelectorAll('span');
+                    spans.forEach(span => {
+                        span.style.transform = '';
+                        span.style.opacity = '';
+                    });
                 }
             });
-        });
+        }
 
-        // Close mobile menu when clicking on a link
-        document.querySelectorAll('.nav-links a').forEach(link => {
-            link.addEventListener('click', function() {
-                navLinks.classList.remove('active');
-                const spans = menuToggle.querySelectorAll('span');
-                spans.forEach(span => {
-                    span.style.transform = '';
-                    span.style.opacity = '';
-                });
-            });
-        });
-
-        // Close mobile menu when clicking outside
-        document.addEventListener('click', function(event) {
-            if (!menuToggle.contains(event.target) && !navLinks.contains(event.target)) {
-                navLinks.classList.remove('active');
-                const spans = menuToggle.querySelectorAll('span');
-                spans.forEach(span => {
-                    span.style.transform = '';
-                    span.style.opacity = '';
-                });
-            }
-        });
-
-        // Modern approach using History API
-function redirectToLogin() {
-    // Check if we can use pushState (modern browsers)
-    if (window.history && window.history.pushState) {
-        // Update the URL without reload
-        window.history.pushState({}, '', '/login');
-        
-        // Then navigate
-        window.location.href = '/login';
-    } else {
-        // Fallback for older browsers
-        window.location.href = '/login';
-    }
-}
+        // Redirect to login function for Get Started button
+        function redirectToLogin() {
+            window.location.href = '/login';
+        }
 
         // Smooth scrolling for navigation links
         document.querySelectorAll('.nav-links a').forEach(link => {
