@@ -105,7 +105,9 @@ const ManualOrderModal = ({
   handleSubmitOrder,
   measurementCategories,
   handleCategoryChange,
-  handleMeasurementChange 
+  handleMeasurementChange,
+  customCategories,
+  handleDeleteCustomCategory
 }) => {
   if (!showManualOrderModal) return null;
 
@@ -177,32 +179,59 @@ const ManualOrderModal = ({
           {/* Garment Category Selection */}
           <div className="bg-gradient-to-r from-green-50 to-teal-50 p-6 rounded-xl">
             <h4 className="font-semibold text-gray-900 mb-4">Select Garment Category</h4>
-            <div className="grid grid-cols-3 gap-3">
-              {Object.entries(measurementCategories).map(([key, category]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => handleCategoryChange(key)}
-                  className={`p-4 rounded-lg border-2 transition-all ${
-                    selectedCategory === key
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  {category.name}
-                </button>
-              ))}
-            </div>
+         <div className="grid grid-cols-3 gap-3">
+  {[
+    ...Object.entries(measurementCategories).filter(([key]) => key !== 'add'),
+    ...Object.entries(customCategories),
+    ...Object.entries(measurementCategories).filter(([key]) => key === 'add')
+  ].map(([key, category]) => (
+    <div key={key} className="relative">
+      <button
+        type="button"
+        onClick={() => handleCategoryChange(key)}
+        className={`w-full p-4 rounded-lg border-2 transition-all ${
+          selectedCategory === key
+            ? 'border-blue-500 bg-blue-50 text-blue-700'
+            : 'border-gray-200 hover:border-gray-300'
+        } ${key === 'add' ? 'border-green-200 hover:border-green-300 bg-green-50' : ''}`}
+      >
+        {key === 'add' ? (
+          <div className="flex items-center justify-center">
+            <Plus className="h-5 w-5 mr-2" />
+            {category.name}
+          </div>
+        ) : (
+          category.name
+        )}
+      </button>
+      
+      {/* Delete button for custom categories only */}
+      {customCategories[key] && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDeleteCustomCategory(key);
+          }}
+          className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors text-xs"
+          title="Delete custom category"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      )}
+    </div>
+  ))}
+</div>
           </div>
 
           {/* Dynamic Measurements */}
           {selectedCategory && (
-            <div className="bg-gradient-to-r from-yellow-50 to-orange-50 p-6 rounded-xl">
+             <div className="bg-gradient-to-r from-yellow-50 to-orange-50 p-6 rounded-xl">
               <h4 className="font-semibold text-gray-900 mb-4">
-                {measurementCategories[selectedCategory].name} Measurements (inches)
+                {(measurementCategories[selectedCategory] || customCategories[selectedCategory])?.name} Measurements (inches)
               </h4>
               <div className="grid grid-cols-3 gap-4">
-                {measurementCategories[selectedCategory].measurements.map(measurement => (
+                {(measurementCategories[selectedCategory] || customCategories[selectedCategory])?.measurements.map(measurement => (
                   <div key={measurement}>
                     <label className="block text-sm font-medium text-gray-700 mb-1 capitalize">
                       {measurement.replace(/([A-Z])/g, ' $1').trim()}
@@ -288,6 +317,111 @@ const ManualOrderModal = ({
   );
 };
 
+const CustomCategoryModal = ({ 
+  showCustomCategoryModal, 
+  setShowCustomCategoryModal,
+  customCategoryForm,
+  setCustomCategoryForm,
+  customMeasurementInput,
+  setCustomMeasurementInput,
+  handleAddCustomMeasurement,
+  handleRemoveCustomMeasurement,
+  handleSaveCustomCategory
+}) => {
+  if (!showCustomCategoryModal) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto m-4">
+        <div className="p-6 border-b bg-gradient-to-r from-gray-50 to-white">
+          <div className="flex justify-between items-center">
+            <h3 className="text-2xl font-bold text-gray-900">Create Custom Category</h3>
+            <button onClick={() => setShowCustomCategoryModal(false)} className="text-gray-400 hover:text-gray-600">
+              <X size={24} />
+            </button>
+          </div>
+        </div>
+        
+        <div className="p-6 space-y-6">
+          {/* Category Name */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Category Name</label>
+            <input
+              type="text"
+              placeholder="e.g., Jacket, Kurti, etc."
+              value={customCategoryForm.name}
+              onChange={(e) => setCustomCategoryForm(prev => ({ ...prev, name: e.target.value }))}
+              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Add Measurements */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Add Measurements</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="e.g., chest, waist, length"
+                value={customMeasurementInput}
+                onChange={(e) => setCustomMeasurementInput(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleAddCustomMeasurement()}
+                className="flex-1 p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                type="button"
+                onClick={handleAddCustomMeasurement}
+                className="px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+
+          {/* Measurements List */}
+          {customCategoryForm.measurements.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Measurements</label>
+              <div className="flex flex-wrap gap-2">
+                {customCategoryForm.measurements.map((measurement, index) => (
+                  <span
+                    key={index}
+                    className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800"
+                  >
+                    {measurement}
+                    <button
+                      onClick={() => handleRemoveCustomMeasurement(measurement)}
+                      className="ml-2 text-blue-600 hover:text-blue-800"
+                    >
+                      <X size={14} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex justify-end space-x-4 pt-4 border-t">
+            <button
+              onClick={() => setShowCustomCategoryModal(false)}
+              className="px-4 py-2 text-gray-600 hover:text-gray-800"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveCustomCategory}
+              disabled={!customCategoryForm.name.trim() || customCategoryForm.measurements.length === 0}
+              className="px-6 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Create Category
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const getCustomerMeasurements = async (customerPhone, garmentType) => {
   try {
     // First try to find customer by phone
@@ -368,6 +502,14 @@ const [manualOrderForm, setManualOrderForm] = useState({
 const [expandedCustomer, setExpandedCustomer] = useState(null);
 const [customerMeasurementHistory, setCustomerMeasurementHistory] = useState({});
 
+const [showCustomCategoryModal, setShowCustomCategoryModal] = useState(false);
+const [customCategoryForm, setCustomCategoryForm] = useState({
+  name: '',
+  measurements: []
+});
+const [customMeasurementInput, setCustomMeasurementInput] = useState('');
+const [customCategories, setCustomCategories] = useState({});
+
 
 // Define measurement categories
 const measurementCategories = {
@@ -390,6 +532,10 @@ const measurementCategories = {
   blouse: {
     name: 'Blouse',
     measurements: ['bust', 'shoulder', 'armLength', 'blouseLength']
+  },
+  add: {
+    name: 'Add Custom Category',
+    measurements: []
   }
 };
 
@@ -431,7 +577,7 @@ useEffect(() => {
       // Fetch user info first
       await fetchUserInfo(user);
       
-      // ✅ REMOVED: Don't fetch customers here since orders aren't loaded yet
+      
       // await fetchCustomers(); 
       
       // Set up orders listener (this will call fetchCustomers when orders load)
@@ -557,7 +703,7 @@ const setupOrderListener = () => {
               previousOrders.set(order.id, order);
             });
             setOrders(allOrders);
-            // ✅ FIX: Call fetchCustomers with the loaded orders
+            //  FIX: Call fetchCustomers with the loaded orders
             fetchCustomers(allOrders);
             initialOrdersLoaded = true;
             return;
@@ -608,7 +754,7 @@ const setupOrderListener = () => {
           // Update orders state
           setOrders(allOrders);
           
-          // ✅ FIX: Update customers when orders change
+          // FIX: Update customers when orders change
           fetchCustomers(allOrders);
 
           // Handle new notifications
@@ -776,6 +922,11 @@ const checkForOrderChanges = (previousOrder, currentOrder) => {
   };
   // Add these functions after line 
 const handleCategoryChange = async (category) => {
+
+  if (category === 'add') {
+    setShowCustomCategoryModal(true);
+    return;
+  }
   setSelectedCategory(category);
   
   // Try to get existing measurements if customer phone is provided
@@ -860,6 +1011,106 @@ if (selectedCategory && manualOrderForm.measurements && Object.keys(manualOrderF
   } catch (error) {
     console.error('Error creating order:', error);
     alert('Failed to create order');
+  }
+};
+
+const handleAddCustomMeasurement = () => {
+  if (customMeasurementInput.trim() && !customCategoryForm.measurements.includes(customMeasurementInput.trim())) {
+    setCustomCategoryForm(prev => ({
+      ...prev,
+      measurements: [...prev.measurements, customMeasurementInput.trim()]
+    }));
+    setCustomMeasurementInput('');
+  }
+};
+
+const handleRemoveCustomMeasurement = (measurement) => {
+  setCustomCategoryForm(prev => ({
+    ...prev,
+    measurements: prev.measurements.filter(m => m !== measurement)
+  }));
+};
+
+// Replace your existing handleSaveCustomCategory function (around line 345)
+const handleSaveCustomCategory = async () => {
+  if (customCategoryForm.name.trim() && customCategoryForm.measurements.length > 0) {
+    try {
+      const categoryKey = customCategoryForm.name.toLowerCase().replace(/\s+/g, '_');
+      
+      const newCustomCategories = {
+        ...customCategories,
+        [categoryKey]: {
+          name: customCategoryForm.name,
+          measurements: customCategoryForm.measurements
+        }
+      };
+      
+      // Save to Firebase
+      const user = auth.currentUser;
+      if (user) {
+        await updateDoc(doc(db, 'tailors', user.uid), {
+          customCategories: newCustomCategories,
+          updatedAt: serverTimestamp()
+        });
+      }
+      
+      // Update local state
+      setCustomCategories(newCustomCategories);
+      
+      setSelectedCategory(categoryKey);
+      setManualOrderForm(prev => ({
+        ...prev,
+        garmentType: customCategoryForm.name,
+        measurements: {}
+      }));
+      
+      setCustomCategoryForm({ name: '', measurements: [] });
+      setShowCustomCategoryModal(false);
+      
+      alert('Custom category saved successfully!');
+    } catch (error) {
+      console.error('Error saving custom category:', error);
+      alert('Failed to save custom category');
+    }
+  }
+  
+};
+
+
+// ADD THE NEW FUNCTION RIGHT HERE ↓
+const handleDeleteCustomCategory = async (categoryKey) => {
+  if (window.confirm('Are you sure you want to delete this custom category? This action cannot be undone.')) {
+    try {
+      const newCustomCategories = { ...customCategories };
+      delete newCustomCategories[categoryKey];
+      
+      // Save to Firebase
+      const user = auth.currentUser;
+      if (user) {
+        await updateDoc(doc(db, 'tailors', user.uid), {
+          customCategories: newCustomCategories,
+          updatedAt: serverTimestamp()
+        });
+      }
+      
+      // Update local state
+      setCustomCategories(newCustomCategories);
+      
+      // If currently selected category is being deleted, reset selection
+      if (selectedCategory === categoryKey) {
+        setSelectedCategory('');
+        setManualOrderForm(prev => ({
+          ...prev,
+          garmentType: '',
+          measurements: {}
+        }));
+      }
+      
+      alert('Custom category deleted successfully!');
+    } catch (error) {
+      console.error('Error deleting custom category:', error);
+      alert('Failed to delete custom category');
+    }
   }
 };
 
@@ -1002,6 +1253,25 @@ const handleCustomerExpand = (customer) => {
 
     return () => unsubscribeAuth();
   }, [navigate]);
+
+useEffect(() => {
+    const loadCustomCategories = async () => {
+      try {
+        const user = auth.currentUser;
+        if (!user) return;
+        
+        const tailorDoc = await getDoc(doc(db, 'tailors', user.uid));
+        if (tailorDoc.exists() && tailorDoc.data().customCategories) {
+          setCustomCategories(tailorDoc.data().customCategories);
+        }
+      } catch (error) {
+        console.error('Error loading custom categories:', error);
+      }
+    };
+    
+    loadCustomCategories();
+  }, []);
+
 
   const handleLogout = async () => {
     try {
@@ -2602,6 +2872,20 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
   handleCategoryChange={handleCategoryChange}
   handleMeasurementChange={handleMeasurementChange}
   getCustomerMeasurements={getCustomerMeasurements}
+  customCategories={customCategories}
+  handleDeleteCustomCategory={handleDeleteCustomCategory}
+/>
+
+<CustomCategoryModal
+  showCustomCategoryModal={showCustomCategoryModal}
+  setShowCustomCategoryModal={setShowCustomCategoryModal}
+  customCategoryForm={customCategoryForm}
+  setCustomCategoryForm={setCustomCategoryForm}
+  customMeasurementInput={customMeasurementInput}
+  setCustomMeasurementInput={setCustomMeasurementInput}
+  handleAddCustomMeasurement={handleAddCustomMeasurement}
+  handleRemoveCustomMeasurement={handleRemoveCustomMeasurement}
+  handleSaveCustomCategory={handleSaveCustomCategory}
 />
       <OrderModal />
       <DayModal />
