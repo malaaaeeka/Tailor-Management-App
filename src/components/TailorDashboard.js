@@ -1712,79 +1712,97 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
          email.includes(searchLower);
 });
 
-  const NotificationDropdown = () => {
+const NotificationDropdown = () => {
   if (!showNotifications) return null;
 
   return (
-     <div className="absolute right-0 top-full mt-2 w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-[9999] max-h-96 overflow-y-auto">
-      <div className="p-4 border-b border-gray-200">
-        <div className="flex justify-between items-center">
-          <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
-          {notifications.length > 0 && (
-            <button
-              onClick={() => setNotifications([])}
-              className="text-sm text-gray-500 hover:text-gray-700"
-            >
-              Clear all
-            </button>
+    <>
+      {/* Mobile backdrop */}
+      <div className="fixed inset-0 bg-black bg-opacity-25 z-[9998] sm:hidden" onClick={toggleNotifications} />
+      
+      {/* Notification dropdown */}
+      <div className="absolute right-0 top-full mt-2 w-screen sm:w-80 md:w-96 bg-white rounded-none sm:rounded-lg shadow-xl border-0 sm:border border-gray-200 z-[9999] max-h-[80vh] sm:max-h-96 overflow-y-auto sm:mx-0 sm:max-w-sm md:max-w-md">
+        <div className="p-4 sm:p-4 border-b border-gray-200 sticky top-0 bg-white">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg sm:text-lg font-semibold text-gray-900">Notifications</h3>
+            <div className="flex items-center gap-2">
+              {notifications.length > 0 && (
+                <button
+                  onClick={() => setNotifications([])}
+                  className="text-sm sm:text-sm text-gray-500 hover:text-gray-700 px-2 py-1 hover:bg-gray-100 rounded transition-colors"
+                >
+                  Clear all
+                </button>
+              )}
+              <button
+                onClick={toggleNotifications}
+                className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <div className="overflow-y-auto">
+          {notifications.length === 0 ? (
+            <div className="p-8 sm:p-8 text-center text-gray-500">
+              <Bell className="h-12 w-12 sm:h-12 sm:w-12 mx-auto text-gray-300 mb-3" />
+              <p className="text-base sm:text-base">No notifications</p>
+            </div>
+          ) : (
+            notifications.map((notification) => (
+              <div
+                key={notification.id}
+                className={`p-4 sm:p-4 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors ${
+                  !notification.read ? 'bg-blue-50' : ''
+                }`}
+                onClick={() => handleNotificationClick(notification)}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start gap-3">
+                      {notification.type === 'new_order' ? (
+                        <ShoppingBag className="h-5 w-5 sm:h-5 sm:w-5 text-green-500 mt-0.5 flex-shrink-0" />
+                      ) : notification.type === 'due_soon' ? (
+                        <AlertCircle className={`h-5 w-5 sm:h-5 sm:w-5 mt-0.5 flex-shrink-0 ${notification.urgent ? 'text-red-500' : 'text-orange-500'}`} />
+                      ) : (
+                        <Edit className="h-5 w-5 sm:h-5 sm:w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <h4 className="text-base sm:text-base font-medium text-gray-900 leading-tight pr-2">
+                            {notification.title}
+                          </h4>
+                          {!notification.read && (
+                            <div className="h-2 w-2 bg-blue-500 rounded-full flex-shrink-0 mt-2"></div>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 mt-2 break-words leading-relaxed pr-2">
+                          {notification.message}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-2">
+                          {notification.timestamp.toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      clearNotification(notification.id);
+                    }}
+                    className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-200 rounded-full transition-colors flex-shrink-0 -mt-1 -mr-1"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+            ))
           )}
         </div>
       </div>
-      
-      <div className="max-h-80 overflow-y-auto">
-        {notifications.length === 0 ? (
-          <div className="p-6 text-center text-gray-500">
-            <Bell className="h-12 w-12 mx-auto text-gray-300 mb-2" />
-            <p>No notifications</p>
-          </div>
-        ) : (
-          notifications.map((notification) => (
-            <div
-              key={notification.id}
-              className={`p-4 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors ${
-                !notification.read ? 'bg-blue-50' : ''
-              }`}
-              onClick={() => handleNotificationClick(notification)}
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center">
-                    {notification.type === 'new_order' ? (
-                      <ShoppingBag className="h-4 w-4 text-green-500 mr-2 mt-0.5" />
-                    ) : notification.type === 'due_soon' ? (
-                      <AlertCircle className={`h-4 w-4 mr-2 mt-0.5 ${notification.urgent ? 'text-red-500' : 'text-orange-500'}`} />
-                    ) : (
-                      <Edit className="h-4 w-4 text-blue-500 mr-2 mt-0.5" />
-                    )}
-                    <h4 className="text-sm font-medium text-gray-900">
-                      {notification.title}
-                    </h4>
-                    {!notification.read && (
-                      <div className="ml-2 h-2 w-2 bg-blue-500 rounded-full"></div>
-                    )}
-                  </div>
-                  <p className="text-sm text-gray-600 mt-1">
-                    {notification.message}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-2">
-                    {notification.timestamp.toLocaleString()}
-                  </p>
-                </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    clearNotification(notification.id);
-                  }}
-                  className="text-gray-400 hover:text-gray-600 ml-2"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
+    </>
   );
 };
   const PhotoModal = () => {

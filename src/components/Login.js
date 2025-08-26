@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase-config';
 import { 
@@ -21,33 +21,85 @@ const Login = () => {
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [errors, setErrors] = useState({});
+
+  // Refs for input fields
+  const nameRef = useRef(null);
+  const phoneRef = useRef(null);
+  const emailRef = useRef(null);
+  const passwordRef = useRef(null);
 
   const navigate = useNavigate();
 
   useEffect(() => {
-  const unsubscribe = onAuthStateChanged(auth, async (user) => {
-    if (user) {
-      try {
-        const tailorDoc = await getDoc(doc(db, 'tailors', user.uid));
-        if (tailorDoc.exists()) {
-          navigate('/tailor-dashboard');  // Navigate directly to tailor dashboard
-          return;
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          const tailorDoc = await getDoc(doc(db, 'tailors', user.uid));
+          if (tailorDoc.exists()) {
+            navigate('/tailor-dashboard');
+            return;
+          }
+          const customerDoc = await getDoc(doc(db, 'customers', user.uid));
+          if (customerDoc.exists()) {
+            navigate('/customer-dashboard');
+            return;
+          }
+        } catch (error) {
+          console.error('Error checking user role:', error);
         }
-        const customerDoc = await getDoc(doc(db, 'customers', user.uid));
-        if (customerDoc.exists()) {
-          navigate('/customer-dashboard');  // Navigate directly to customer dashboard
-          return;
-        }
-      } catch (error) {
-        console.error('Error checking user role:', error);
       }
-    }
-  });
-  return () => unsubscribe();
-}, [navigate]);
+    });
+    return () => unsubscribe();
+  }, [navigate]);
 
   const handleInputChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setFormData({ ...formData, [name]: value });
+    
+    // Clear error when user starts typing
+    if (errors[name]) {
+      setErrors({ ...errors, [name]: false });
+    }
+  };
+
+  const validateForm = () => {
+    const newErrors = {};
+    let firstErrorField = null;
+
+    // Always validate email and password
+    if (!formData.email.trim()) {
+      newErrors.email = true;
+      if (!firstErrorField) firstErrorField = emailRef.current;
+    }
+    
+    if (!formData.password.trim()) {
+      newErrors.password = true;
+      if (!firstErrorField) firstErrorField = passwordRef.current;
+    }
+
+    // Additional validation for customer signup
+    if (isSignup && userType === 'customer') {
+      if (!formData.name.trim()) {
+        newErrors.name = true;
+        if (!firstErrorField) firstErrorField = nameRef.current;
+      }
+      
+      if (!formData.phone.trim()) {
+        newErrors.phone = true;
+        if (!firstErrorField) firstErrorField = phoneRef.current;
+      }
+    }
+
+    setErrors(newErrors);
+
+    // Focus on first error field
+    if (firstErrorField) {
+      firstErrorField.focus();
+      firstErrorField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    return Object.keys(newErrors).length === 0;
   };
 
   const resetForm = () => {
@@ -58,22 +110,27 @@ const Login = () => {
       phone: '',
       businessName: ''
     });
+    setErrors({});
   };
 
   const handleTailorAuth = async (e) => {
     e.preventDefault();
+    
+    if (!validateForm()) {
+      setMessage('Please fill in all required fields.');
+      return;
+    }
+
     setLoading(true);
     setMessage('');
 
     try {
-      // Only login for tailors - no signup
       const userCredential = await signInWithEmailAndPassword(auth, formData.email.toLowerCase().trim(), formData.password);
       
       const tailorDoc = await getDoc(doc(db, 'tailors', userCredential.user.uid));
       if (tailorDoc.exists()) {
         const tailorData = tailorDoc.data();
         
-        // Additional security checks
         if (!tailorData.isActive) {
           await auth.signOut();
           setMessage('Your tailor account has been deactivated. Please contact admin.');
@@ -124,17 +181,17 @@ const Login = () => {
 
   const handleCustomerAuth = async (e) => {
     e.preventDefault();
+    
+    if (!validateForm()) {
+      setMessage('Please fill in all required fields.');
+      return;
+    }
+
     setLoading(true);
     setMessage('');
 
     try {
       if (isSignup) {
-        if (!formData.name || !formData.phone) {
-          setMessage('Please fill in all required fields.');
-          setLoading(false);
-          return;
-        }
-
         const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
         
         await setDoc(doc(db, 'customers', userCredential.user.uid), {
@@ -171,6 +228,7 @@ const Login = () => {
       switch (error.code) {
         case 'auth/user-not-found':
           errorMessage = 'No account found with this email. Please sign up first.';
+          break;
         case 'auth/wrong-password':
           errorMessage = 'Incorrect password. Please try again.';
           break;
@@ -195,6 +253,8 @@ const Login = () => {
 
   const handleForgotPassword = async () => {
     if (!formData.email) {
+      setErrors({ email: true });
+      emailRef.current?.focus();
       setMessage('Please enter your email first.');
       return;
     }
@@ -211,14 +271,12 @@ const Login = () => {
     setUserType(newUserType);
     resetForm();
     setMessage('');
-    // Reset to login mode when switching to tailor
     if (newUserType === 'tailor') {
       setIsSignup(false);
     }
   };
 
   const handleAuthToggle = (newIsSignup) => {
-    // Don't allow signup for tailors
     if (userType === 'tailor' && newIsSignup) {
       return;
     }
@@ -230,7 +288,6 @@ const Login = () => {
   const getResponsiveStyles = () => {
     const isMobile = window.innerWidth <= 768;
     const isTablet = window.innerWidth > 768 && window.innerWidth <= 1024;
-    const isDesktop = window.innerWidth > 1024;
 
     return {
       container: {
@@ -339,9 +396,14 @@ const Login = () => {
         borderRadius: '6px',
         fontSize: isMobile ? '1rem' : '0.875rem',
         background: 'white',
-        transition: 'border-color 0.2s ease',
+        transition: 'all 0.2s ease',
         fontFamily: 'inherit',
         boxSizing: 'border-box'
+      },
+      inputError: {
+        borderColor: '#dc2626',
+        backgroundColor: '#fef2f2',
+        animation: 'shake 0.5s ease-in-out'
       },
       submitButton: {
         width: '100%',
@@ -450,8 +512,22 @@ const Login = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const styles = getResponsiveStyles();
+  // Add CSS for shake animation
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+        20%, 40%, 60%, 80% { transform: translateX(5px); }
+      }
+    `;
+    document.head.appendChild(style);
+    
+    return () => document.head.removeChild(style);
+  }, []);
 
+  const styles = getResponsiveStyles();
   const isMobile = window.innerWidth <= 768;
 
   return (
@@ -515,12 +591,16 @@ const Login = () => {
           {isSignup && userType === 'customer' && (
             <div style={styles.inputGroup}>
               <input
+                ref={nameRef}
                 type="text"
                 name="name"
                 value={formData.name}
                 onChange={handleInputChange}
-                style={styles.input}
-                placeholder="Full Name"
+                style={{
+                  ...styles.input,
+                  ...(errors.name ? styles.inputError : {})
+                }}
+                placeholder="Full Name *"
                 required
               />
             </div>
@@ -529,12 +609,16 @@ const Login = () => {
           {isSignup && userType === 'customer' && (
             <div style={styles.inputGroup}>
               <input
+                ref={phoneRef}
                 type="tel"
                 name="phone"
                 value={formData.phone}
                 onChange={handleInputChange}
-                style={styles.input}
-                placeholder="Phone Number"
+                style={{
+                  ...styles.input,
+                  ...(errors.phone ? styles.inputError : {})
+                }}
+                placeholder="Phone Number *"
                 required
               />
             </div>
@@ -542,24 +626,32 @@ const Login = () => {
 
           <div style={styles.inputGroup}>
             <input
+              ref={emailRef}
               type="email"
               name="email"
               value={formData.email}
               onChange={handleInputChange}
-              style={styles.input}
-              placeholder="Email"
+              style={{
+                ...styles.input,
+                ...(errors.email ? styles.inputError : {})
+              }}
+              placeholder="Email *"
               required
             />
           </div>
 
           <div style={styles.inputGroup}>
             <input
+              ref={passwordRef}
               type="password"
               name="password"
               value={formData.password}
               onChange={handleInputChange}
-              style={styles.input}
-              placeholder="Password"
+              style={{
+                ...styles.input,
+                ...(errors.password ? styles.inputError : {})
+              }}
+              placeholder="Password *"
               minLength="6"
               required
             />
@@ -580,16 +672,14 @@ const Login = () => {
             )}
           </button>
 
-          {(
-            <button 
-              type="button" 
-              onClick={handleForgotPassword}
-              style={styles.link}
-              disabled={loading}
-            >
-              Forgot Password?
-            </button>
-          )}
+          <button 
+            type="button" 
+            onClick={handleForgotPassword}
+            style={styles.link}
+            disabled={loading}
+          >
+            Forgot Password?
+          </button>
 
           {/* Only show auth toggle for customers */}
           {userType === 'customer' && (
@@ -624,7 +714,7 @@ const Login = () => {
           {message && (
             <div style={{
               ...styles.message,
-              ...(message.includes('Error') || message.includes('error') ? styles.messageError : styles.messageSuccess)
+              ...(message.includes('Error') || message.includes('error') || message.includes('Please fill') ? styles.messageError : styles.messageSuccess)
             }}>
               {message}
             </div>
