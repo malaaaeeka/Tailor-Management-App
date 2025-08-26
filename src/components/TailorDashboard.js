@@ -113,7 +113,7 @@ const ManualOrderModal = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto m-4">
+      <div className="bg-white rounded-xl sm:rounded-2xl max-w-sm sm:max-w-2xl lg:max-w-4xl w-full max-h-[95vh] overflow-y-auto mx-2 sm:m-4">
         <div className="p-6 border-b bg-gradient-to-r from-gray-50 to-white">
           <div className="flex justify-between items-center">
             <h3 className="text-2xl font-bold text-gray-900">Create New Order</h3>
@@ -179,7 +179,7 @@ const ManualOrderModal = ({
           {/* Garment Category Selection */}
           <div className="bg-gradient-to-r from-green-50 to-teal-50 p-6 rounded-xl">
             <h4 className="font-semibold text-gray-900 mb-4">Select Garment Category</h4>
-         <div className="grid grid-cols-3 gap-3">
+         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
   {[
     ...Object.entries(measurementCategories).filter(([key]) => key !== 'add'),
     ...Object.entries(customCategories),
@@ -197,7 +197,7 @@ const ManualOrderModal = ({
       >
         {key === 'add' ? (
           <div className="flex items-center justify-center">
-            <Plus className="h-5 w-5 mr-2" />
+            <Plus className="h-4 w-4 sm:h-5 sm:w-5 mr-1 sm:mr-2" />
             {category.name}
           </div>
         ) : (
@@ -230,7 +230,7 @@ const ManualOrderModal = ({
               <h4 className="font-semibold text-gray-900 mb-4">
                 {(measurementCategories[selectedCategory] || customCategories[selectedCategory])?.name} Measurements (inches)
               </h4>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {(measurementCategories[selectedCategory] || customCategories[selectedCategory])?.measurements.map(measurement => (
                   <div key={measurement}>
                     <label className="block text-sm font-medium text-gray-700 mb-1 capitalize">
@@ -253,7 +253,7 @@ const ManualOrderModal = ({
           {/* Order Details */}
           <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-6 rounded-xl">
             <h4 className="font-semibold text-gray-900 mb-4">Order Details</h4>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <input
                 type="text"
                 placeholder="Fabric Type"
@@ -332,7 +332,7 @@ const CustomCategoryModal = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto m-4">
+      <div className="bg-white rounded-xl sm:rounded-2xl max-w-sm sm:max-w-xl lg:max-w-2xl w-full max-h-[90vh] overflow-y-auto mx-2 sm:m-4">
         <div className="p-6 border-b bg-gradient-to-r from-gray-50 to-white">
           <div className="flex justify-between items-center">
             <h3 className="text-2xl font-bold text-gray-900">Create Custom Category</h3>
@@ -1833,7 +1833,7 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto m-4">
+        <div className="bg-white rounded-lg max-w-sm sm:max-w-xl lg:max-w-2xl w-full max-h-[90vh] overflow-y-auto mx-2 sm:m-4">
           <div className="p-6 border-b">
             <div className="flex justify-between items-center">
               <h3 className="text-xl font-semibold">
@@ -1931,7 +1931,7 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40">
-        <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto m-4 shadow-luxury border border-gray-200">
+        <div className="bg-white rounded-xl sm:rounded-2xl max-w-sm sm:max-w-3xl lg:max-w-4xl w-full max-h-[95vh] overflow-y-auto mx-2 sm:m-4 shadow-luxury border border-gray-200">
           <div className="p-6 border-b bg-gradient-to-r from-gray-50 to-white">
             <div className="flex justify-between items-center">
               <h3 className="text-2xl font-bold text-gray-900">Order Details - #{selectedOrder.id?.slice(-8)}</h3>
@@ -1950,7 +1950,7 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
                 <User className="h-5 w-5 mr-2 text-blue-600" />
                 Customer Information
               </h4>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-gray-600">Name</p>
                   <p className="font-medium text-gray-900">{customer.name || 'N/A'}</p>
@@ -1976,7 +1976,7 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
                   <Image className="h-5 w-5 mr-2 text-green-600" />
                   Customer Inspiration Photos ({inspirationPhotos.length})
                 </h4>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-4">
                   {inspirationPhotos.map((photo, index) => (
                     <div key={index} className="relative group">
                       <div className="aspect-square bg-gray-200 rounded-xl overflow-hidden cursor-pointer shadow-md hover:shadow-lg transition-all duration-300 group-hover:scale-105">
@@ -2068,7 +2068,7 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
             {selectedOrder.measurements && (
               <div className="bg-gradient-to-r from-indigo-50 to-purple-50 p-6 rounded-xl border border-indigo-100">
                 <h4 className="font-semibold text-gray-900 mb-4">Measurements</h4>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-4">
                   {Object.entries(selectedOrder.measurements).map(([key, value]) => (
                     value && (
                       <div key={key} className="bg-white p-3 rounded-lg shadow-sm">
@@ -2149,9 +2149,9 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
         }} />
         
         <div className="relative max-w-7xl mx-auto px-6 py-8">
-          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 lg:gap-6">
             <div className="space-y-2">
-              <h1 className="text-3xl lg:text-4xl font-bold tracking-tight">
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight">
                 xyz shop
                 <span className="block text-lg lg:text-xl font-normal text-white/80 mt-1">
                   {userInfo.name}'s Dashboard
@@ -2165,7 +2165,7 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
               </p>
             </div>
             
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 lg:gap-4">
               <div className="relative z-[100]">
                 <button
                   onClick={toggleNotifications}
@@ -2194,14 +2194,14 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8 space-y-4 sm:space-y-8 pb-24 sm:pb-32">
         {activeTab === 'overview' && (
           <>
             {/* Stats Overview */}
             <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-2xl border border-white/50 p-8">
               <h2 className="text-2xl lg:text-3xl font-bold text-gray-900 mb-6">Business Overview</h2>
               
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6">
                 <div className="relative overflow-hidden rounded-xl border p-6 transition-all duration-300 hover:shadow-xl hover:scale-105 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
                   <div className="flex items-center justify-between">
                     <div className="space-y-1">
@@ -2255,7 +2255,7 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
             {/* Recent Orders */}
             <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-2xl border border-white/50 overflow-hidden">
               <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-6 py-4 border-b border-gray-200">
-                <h3 className="text-xl font-bold text-gray-900">Recent Orders</h3>
+                <h3 className="text-lg sm:text-xl font-bold text-gray-900">Recent Orders</h3>
               </div>
               <div className="divide-y divide-gray-100">
                 {orders.slice(0, 5).map((order, index) => {
@@ -2268,8 +2268,8 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
                       className="px-6 py-4 hover:bg-gradient-to-r hover:from-blue-50 hover:to-purple-50 transition-all duration-300 group"
                       style={{ animationDelay: `${index * 0.1}s` }}
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-4">
+                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-0"> 
+                        <div className="flex items-center space-x-2 md:space-x-4">
                           <div className="w-2 h-2 bg-blue-500 rounded-full opacity-60 group-hover:opacity-100 transition-opacity" />
                           <div>
                             <p className="text-sm font-medium text-gray-900 flex items-center">
@@ -2289,8 +2289,8 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center space-x-4">
-                          <div className="text-right">
+                        <div className="flex items-center justify-between md:justify-end space-x-2 md:space-x-4 w-full md:w-auto">
+                          <div className="text-left md:text-right">
                             <p className="text-sm font-medium text-gray-900">
                               ${order.totalAmount || order.price || 0}
                             </p>
@@ -2335,8 +2335,8 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
             <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-6 py-4 border-b border-gray-200">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <h3 className="text-xl font-bold text-gray-900">Customer Orders</h3>
-                
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4"></div>
+                <div className="flex items-center gap-1 lg:gap-2 flex-wrap">
                   {[
                     { id: 'all', label: 'All Orders', count: orders.length },
                     { id: 'pending', label: 'Pending', count: orders.filter(o => o.status === 'pending').length },
@@ -2347,7 +2347,7 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
                     <button
                       key={tab.id}
                       onClick={() => setOrderFilter(tab.id)}
-                      className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-300 ${
+                      className={`px-2 md:px-4 py-2 text-xs md:text-sm font-medium rounded-lg transition-all duration-300 ${
                         orderFilter === tab.id
                           ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg'
                           : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800'
@@ -2380,13 +2380,13 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
                 <table className="min-w-full divide-y divide-gray-100">
                   <thead className="bg-gradient-to-r from-gray-50 to-blue-50">
                     <tr>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Order ID</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Customer</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Garment</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Progress</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Due Date</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+                     <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap"> Order ID</th>
+                      <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">Customer</th>
+                      <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">Garment</th>
+                      <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">Status</th>
+                      <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">Progress</th>
+                      <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">Due Date</th>
+                      <th className="px-3 sm:px-4 lg:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-50">
@@ -2400,17 +2400,17 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
                           className="hover:bg-gradient-to-r hover:from-blue-50 hover:to-purple-50 transition-all duration-300 group"
                           style={{ animationDelay: `${index * 0.1}s` }}
                         >
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
                             <div className="flex items-center">
                               <div className="w-2 h-2 bg-blue-500 rounded-full mr-3 opacity-60 group-hover:opacity-100 transition-opacity" />
                               <span className="text-sm font-mono text-gray-900">#{order.id?.slice(-8)}</span>
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
                             <div className="text-sm font-medium text-gray-900">{customer.name || 'Unknown Customer'}</div>
                             <div className="text-xs text-gray-500">{customer.phone || 'No phone'}</div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
                             <div className="flex items-center">
                               <div>
                                 <div className="text-sm font-medium text-gray-900">
@@ -2426,10 +2426,10 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
                               )}
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
                             <StatusBadge status={order.status} />
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
                             <div className="flex items-center gap-3">
                               <ProgressRing progress={order.progress || 0} size="sm" />
                               <span className="text-sm text-gray-600">{order.progress || 0}%</span>
@@ -2488,7 +2488,7 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
     {activeTab === 'customers' && (
   <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-2xl border border-white/50 overflow-hidden">
     <div className="bg-gradient-to-r from-gray-50 to-purple-50 px-6 py-4 border-b border-gray-200">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <div>
           <h3 className="text-xl font-bold text-gray-900">Customers & Measurement History</h3>
           <p className="text-sm text-gray-600 mt-1">Click on any customer to view their measurement history</p>
@@ -2500,7 +2500,7 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
             placeholder="Search by name, phone, or email..."
             value={customerSearchTerm}
             onChange={(e) => setCustomerSearchTerm(e.target.value)}
-            className="pl-10 pr-4 py-2 w-80 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+            className="pl-10 pr-4 py-2 w-full sm:w-80 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
           />
           <User className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
           {customerSearchTerm && (
@@ -2542,8 +2542,8 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
                 style={{ animationDelay: `${index * 0.1}s` }}
                 onClick={() => handleCustomerExpand(customer)}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-0">
+                  <div className="flex items-center space-x-3 md:space-x-4">
                     <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-blue-500 rounded-full flex items-center justify-center text-white font-bold text-lg">
                       {(customer.name || 'U').charAt(0).toUpperCase()}
                     </div>
@@ -2560,7 +2560,7 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
                       <p className="text-xs text-gray-400">{customer.email || 'No email'}</p>
                     </div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-left md:text-right">
                     <p className="text-sm font-medium text-gray-900">
                       {customerOrders.length} order{customerOrders.length !== 1 ? 's' : ''}
                     </p>
@@ -2730,11 +2730,11 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
         {activeTab === 'calendar' && (
           <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-2xl border border-white/50 overflow-hidden">
             <div className="bg-gradient-to-r from-gray-50 to-green-50 px-6 py-4 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-bold text-gray-900">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-0">
+                <h3 className="text-lg sm:text-xl font-bold text-gray-900">
                   {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
                 </h3>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-1 md:space-x-2 justify-end">
                   <EnhancedButton
                     variant="ghost"
                     size="sm"
@@ -2764,15 +2764,15 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
             </div>
             
             <div className="p-6">
-              <div className="grid grid-cols-7 gap-px bg-gray-200 rounded-lg overflow-hidden shadow-inner">
+              <div className="grid grid-cols-7 gap-px bg-gray-200 rounded-lg overflow-hidden shadow-inner text-xs sm:text-sm">
                 {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                  <div key={day} className="bg-gradient-to-br from-gray-50 to-gray-100 py-3 px-3 text-center text-sm font-semibold text-gray-600">
+                  <div key={day} className="bg-gradient-to-br from-gray-50 to-gray-100 py-2 md:py-3 px-2 md:px-3 text-center text-xs md:text-sm font-semibold text-gray-600">
                     {day}
                   </div>
                 ))}
                 
                 {Array.from({ length: getFirstDayOfMonth(currentDate) }, (_, i) => (
-                  <div key={`empty-${i}`} className="bg-white p-2 h-24"></div>
+                  <div key={`empty-${i}`} className="bg-white p-1 sm:p-2 h-12 sm:h-16 lg:h-24"></div>
                 ))}
                 
                 {Array.from({ length: getDaysInMonth(currentDate) }, (_, i) => {
@@ -2786,7 +2786,7 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
                   return (
                     <div
                       key={i + 1}
-                      className={`bg-white p-2 h-24 border-b border-r cursor-pointer hover:bg-gradient-to-br hover:from-blue-50 hover:to-purple-50 transition-all duration-300 ${
+                      className={`bg-white p-1 sm:p-2 h-16 sm:h-24 border-b border-r cursor-pointer hover:bg-gradient-to-br hover:from-blue-50 hover:to-purple-50 transition-all duration-300 ${
                         isCurrentDay ? 'bg-gradient-to-br from-blue-100 to-purple-100 ring-2 ring-blue-500' : ''
                       }`}
                       onClick={() => {
@@ -2828,8 +2828,8 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
       </main>
 
       {/* Navigation Tabs */}
-<div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-white/90 backdrop-blur-lg rounded-2xl shadow-2xl border border-white/50 p-2">
-  <nav className="flex space-x-2 items-center">
+<div className="fixed bottom-4 md:bottom-6 left-1/2 transform -translate-x-1/2 bg-white/90 backdrop-blur-lg rounded-xl md:rounded-2xl shadow-2xl border border-white/50 p-1 md:p-2 max-w-[95vw] overflow-x-auto">
+  <nav className="flex space-x-1 md:space-x-2 items-center min-w-max">
     {[
       { id: 'overview', name: 'Overview', icon: TrendingUp },
       { id: 'orders', name: 'Orders', icon: ShoppingBag },
@@ -2839,24 +2839,24 @@ const completedOrders = orders.filter(order => order.status === 'delivered').len
       <button
         key={tab.id}
         onClick={() => setActiveTab(tab.id)}
-        className={`flex items-center px-6 py-3 rounded-xl font-medium text-sm transition-all duration-300 ${
+        className={`flex items-center px-3 sm:px-6 py-2 sm:py-3 rounded-lg sm:rounded-xl font-medium text-xs sm:text-sm transition-all duration-300 ${
           activeTab === tab.id
             ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg transform scale-105'
             : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
         }`}
       >
-        <tab.icon className="h-5 w-5 mr-2" />
-        {tab.name}
+        <tab.icon className="h-4 w-4 md:h-5 md:w-5 mr-1 md:mr-2" />
+        <span className="hidden sm:inline">{tab.name}</span>
       </button>
     ))}
     
     {/* Add Order Button */}
     <button
       onClick={() => setShowManualOrderModal(true)}
-      className="flex items-center px-6 py-3 rounded-xl font-medium text-sm transition-all duration-300 bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg hover:from-green-600 hover:to-emerald-700 transform hover:scale-105"
+      className="flex items-center px-3 sm:px-6 py-2 sm:py-3 rounded-lg sm:rounded-xl font-medium text-xs sm:text-sm transition-all duration-300 bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg hover:from-green-600 hover:to-emerald-700 transform hover:scale-105"
     >
       <Plus className="h-5 w-5 mr-2" />
-      Add Order
+      <span className="hidden sm:inline">Add Order</span>
     </button>
   </nav>
 </div>
