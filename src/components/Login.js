@@ -157,7 +157,7 @@ const Login = () => {
           userType: 'tailor',
           createdAt: new Date(),
           isActive: true,
-          isVerified: false, // Admin needs to verify new tailors
+          isVerified: true, // Admin needs to verify new tailors
           orders: [], // Initialize empty orders array for specific orders
           completedOrders: [],
           totalEarnings: 0,
