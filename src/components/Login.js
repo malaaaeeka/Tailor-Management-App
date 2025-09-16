@@ -28,6 +28,7 @@ const Login = () => {
   const phoneRef = useRef(null);
   const emailRef = useRef(null);
   const passwordRef = useRef(null);
+  const businessNameRef = useRef(null);
 
   const navigate = useNavigate();
 
@@ -91,6 +92,25 @@ const Login = () => {
       }
     }
 
+    // Additional validation for tailor signup
+    if (isSignup && userType === 'tailor') {
+      if (!formData.name.trim()) {
+        newErrors.name = true;
+        if (!firstErrorField) firstErrorField = nameRef.current;
+      }
+      
+      if (!formData.phone.trim()) {
+        newErrors.phone = true;
+        if (!firstErrorField) firstErrorField = phoneRef.current;
+      }
+
+      if (!formData.businessName.trim()) {
+        newErrors.businessName = true;
+        if (!firstErrorField) firstErrorField = businessNameRef.current;
+      }
+
+    }
+
     setErrors(newErrors);
 
     // Focus on first error field
@@ -125,32 +145,59 @@ const Login = () => {
     setMessage('');
 
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, formData.email.toLowerCase().trim(), formData.password);
-      
-      const tailorDoc = await getDoc(doc(db, 'tailors', userCredential.user.uid));
-      if (tailorDoc.exists()) {
-        const tailorData = tailorDoc.data();
+      if (isSignup) {
+        // Tailor Signup
+        const userCredential = await createUserWithEmailAndPassword(auth, formData.email.toLowerCase().trim(), formData.password);
         
-        if (!tailorData.isActive) {
-          await auth.signOut();
-          setMessage('Your tailor account has been deactivated. Please contact admin.');
-          setLoading(false);
-          return;
-        }
-        
-        if (!tailorData.isVerified) {
-          await auth.signOut();
-          setMessage('Your tailor account is pending verification. Please contact admin.');
-          setLoading(false);
-          return;
-        }
-        
-        setMessage(`Welcome back, ${tailorData.name}! Redirecting to dashboard...`);
-        setTimeout(() => navigate('/tailor-dashboard'), 1500);
+        await setDoc(doc(db, 'tailors', userCredential.user.uid), {
+          name: formData.name.trim(),
+          email: formData.email.toLowerCase().trim(),
+          phone: formData.phone.trim(),
+          businessName: formData.businessName.trim(),
+          userType: 'tailor',
+          createdAt: new Date(),
+          isActive: true,
+          isVerified: false, // Admin needs to verify new tailors
+          orders: [], // Initialize empty orders array for specific orders
+          completedOrders: [],
+          totalEarnings: 0,
+          rating: 0,
+          totalReviews: 0,
+          uid: userCredential.user.uid
+        });
 
+        setMessage(`Welcome ${formData.name}! Your tailor account has been created successfully. Please wait for admin verification before you can access your dashboard.`);
+        resetForm();
+        // Don't navigate immediately since account needs verification
       } else {
-        await auth.signOut();
-        setMessage('Access denied: This account is not authorized as a tailor. Please contact admin for tailor account creation.');
+        // Tailor Login
+        const userCredential = await signInWithEmailAndPassword(auth, formData.email.toLowerCase().trim(), formData.password);
+        
+        const tailorDoc = await getDoc(doc(db, 'tailors', userCredential.user.uid));
+        if (tailorDoc.exists()) {
+          const tailorData = tailorDoc.data();
+          
+          if (!tailorData.isActive) {
+            await auth.signOut();
+            setMessage('Your tailor account has been deactivated. Please contact admin.');
+            setLoading(false);
+            return;
+          }
+          
+          if (!tailorData.isVerified) {
+            await auth.signOut();
+            setMessage('Your tailor account is pending verification. Please contact admin.');
+            setLoading(false);
+            return;
+          }
+          
+          setMessage(`Welcome back, ${tailorData.name}! Redirecting to dashboard...`);
+          setTimeout(() => navigate('/tailor-dashboard'), 1500);
+
+        } else {
+          await auth.signOut();
+          setMessage('Access denied: This account is not authorized as a tailor. Please contact admin for tailor account creation.');
+        }
       }
     } catch (error) {
       console.error('Tailor auth error:', error);
@@ -162,6 +209,12 @@ const Login = () => {
           break;
         case 'auth/wrong-password':
           errorMessage = 'Incorrect password. Please try again.';
+          break;
+        case 'auth/email-already-in-use':
+          errorMessage = 'An account with this email already exists. Please login instead.';
+          break;
+        case 'auth/weak-password':
+          errorMessage = 'Password should be at least 6 characters long.';
           break;
         case 'auth/invalid-email':
           errorMessage = 'Please enter a valid email address.';
@@ -271,15 +324,10 @@ const Login = () => {
     setUserType(newUserType);
     resetForm();
     setMessage('');
-    if (newUserType === 'tailor') {
-      setIsSignup(false);
-    }
+    // Don't force isSignup to false for tailors anymore
   };
 
   const handleAuthToggle = (newIsSignup) => {
-    if (userType === 'tailor' && newIsSignup) {
-      return;
-    }
     setIsSignup(newIsSignup);
     resetForm();
     setMessage('');
@@ -533,36 +581,34 @@ const Login = () => {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        {/* Left Panel - Sign Up (Desktop/Tablet only) - Hide for tailors */}
-        {!isMobile && userType === 'customer' && (
+        {/* Left Panel - Sign Up (Desktop/Tablet only) */}
+        {!isMobile && (
           <div style={styles.leftPanel}>
-            <h1 style={styles.welcomeTitle}>New Here?</h1>
+            <h1 style={styles.welcomeTitle}>
+              {isSignup ? 'Welcome!' : 'New Here?'}
+            </h1>
             <p style={styles.welcomeSubtitle}>
-              Create your account and start your journey with our tailoring service.
+              {isSignup 
+                ? `Already have a ${userType} account? Sign in to access your dashboard.`
+                : `Create your ${userType} account and start your journey with our tailoring service.`
+              }
             </p>
             <button 
               style={styles.toggleButton}
-              onClick={() => handleAuthToggle(true)}
+              onClick={() => handleAuthToggle(!isSignup)}
             >
-              Sign Up
+              {isSignup ? 'Sign In' : 'Sign Up'}
             </button>
-          </div>
-        )}
-
-        {/* Left Panel - For Tailors (Desktop/Tablet only) */}
-        {!isMobile && userType === 'tailor' && (
-          <div style={styles.leftPanel}>
-            <h1 style={styles.welcomeTitle}>Tailor Login</h1>
-            <p style={styles.welcomeSubtitle}>
-              Access your tailor dashboard with your credentials.
-            </p>
           </div>
         )}
 
         {/* Right Panel - Form */}
         <div style={styles.rightPanel}>
           <h2 style={styles.formTitle}>
-            {userType === 'tailor' ? 'Tailor Login' : (isSignup ? 'Create Account' : 'Customer Login')}
+            {userType === 'tailor' ? 
+              (isSignup ? 'Create Tailor Account' : 'Tailor Login') : 
+              (isSignup ? 'Create Customer Account' : 'Customer Login')
+            }
           </h2>
 
           {/* User Type Selection */}
@@ -587,8 +633,8 @@ const Login = () => {
             </button>
           </div>
 
-          {/* Form Fields - Only show signup fields for customers */}
-          {isSignup && userType === 'customer' && (
+          {/* Form Fields - Show signup fields for both customers and tailors */}
+          {isSignup && (
             <div style={styles.inputGroup}>
               <input
                 ref={nameRef}
@@ -606,7 +652,7 @@ const Login = () => {
             </div>
           )}
 
-          {isSignup && userType === 'customer' && (
+          {isSignup && (
             <div style={styles.inputGroup}>
               <input
                 ref={phoneRef}
@@ -622,6 +668,27 @@ const Login = () => {
                 required
               />
             </div>
+          )}
+
+          {/* Additional fields for tailor signup */}
+          {isSignup && userType === 'tailor' && (
+            <>
+              <div style={styles.inputGroup}>
+                <input
+                  ref={businessNameRef}
+                  type="text"
+                  name="businessName"
+                  value={formData.businessName}
+                  onChange={handleInputChange}
+                  style={{
+                    ...styles.input,
+                    ...(errors.businessName ? styles.inputError : {})
+                  }}
+                  placeholder="Business Name *"
+                  required
+                />
+              </div>
+            </>
           )}
 
           <div style={styles.inputGroup}>
@@ -666,9 +733,13 @@ const Login = () => {
             }}
           >
             {loading ? (
-              userType === 'tailor' ? 'Signing In...' : (isSignup ? 'Creating Account...' : 'Signing In...')
+              userType === 'tailor' ? 
+                (isSignup ? 'Creating Account...' : 'Signing In...') : 
+                (isSignup ? 'Creating Account...' : 'Signing In...')
             ) : (
-              userType === 'tailor' ? 'Sign In' : (isSignup ? 'Create Account' : 'Sign In')
+              userType === 'tailor' ? 
+                (isSignup ? 'Create Tailor Account' : 'Sign In') : 
+                (isSignup ? 'Create Account' : 'Sign In')
             )}
           </button>
 
@@ -681,26 +752,24 @@ const Login = () => {
             Forgot Password?
           </button>
 
-          {/* Only show auth toggle for customers */}
-          {userType === 'customer' && (
-            <button 
-              type="button"
-              onClick={() => handleAuthToggle(!isSignup)}
-              style={styles.link}
-            >
-              {isSignup ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
-            </button>
-          )}
+          {/* Auth toggle for both user types */}
+          <button 
+            type="button"
+            onClick={() => handleAuthToggle(!isSignup)}
+            style={styles.link}
+          >
+            {isSignup ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
+          </button>
 
-          {/* Mobile Sign Up Section - Only show for customers when not in signup mode */}
-          {isMobile && !isSignup && userType === 'customer' && (
+          {/* Mobile Sign Up Section */}
+          {isMobile && !isSignup && (
             <div style={styles.mobileSignUpSection}>
               <div style={styles.divider}>
                 <span style={styles.dividerText}>or</span>
               </div>
               <h3 style={styles.mobileSignUpTitle}>New Here?</h3>
               <p style={styles.mobileSignUpSubtitle}>
-                Create your account and start your journey with our tailoring service.
+                Create your {userType} account and start your journey with our tailoring service.
               </p>
               <button 
                 style={styles.mobileSignUpButton}

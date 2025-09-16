@@ -271,10 +271,11 @@ const ManualOrderModal = ({
               />
               <input
                 type="date"
+                min={new Date().toISOString().split('T')[0]}
                 value={manualOrderForm.dueDate}
                 onChange={(e) => setManualOrderForm(prev => ({ ...prev, dueDate: e.target.value }))}
                 className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
+            />
               <select
                 value={manualOrderForm.urgency}
                 onChange={(e) => setManualOrderForm(prev => ({ ...prev, urgency: e.target.value }))}
@@ -451,7 +452,80 @@ const getCustomerMeasurements = async (customerPhone, garmentType) => {
   }
 };
 
+const EditMeasurementsModal = ({ 
+  showEditMeasurementsModal, 
+  setShowEditMeasurementsModal,
+  editingMeasurements,
+  setEditingMeasurements,
+  handleSaveMeasurements
+}) => {
+  if (!showEditMeasurementsModal || !editingMeasurements) return null;
 
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl sm:rounded-2xl max-w-sm sm:max-w-xl lg:max-w-2xl w-full max-h-[90vh] overflow-y-auto mx-2 sm:m-4">
+        <div className="p-6 border-b bg-gradient-to-r from-gray-50 to-white">
+          <div className="flex justify-between items-center">
+            <h3 className="text-2xl font-bold text-gray-900">
+  Edit {editingMeasurements.garmentType} Measurements
+  {editingMeasurements.orderId && (
+    <span className="text-sm font-normal text-gray-600 block">
+      Order #{editingMeasurements.orderId.slice(-8)}
+    </span>
+  )}
+</h3>
+            <button onClick={() => setShowEditMeasurementsModal(false)} className="text-gray-400 hover:text-gray-600">
+              <X size={24} />
+            </button>
+          </div>
+          <p className="text-sm text-gray-600 mt-2">
+            Customer: {editingMeasurements.customer.name}
+          </p>
+        </div>
+        
+        <div className="p-6 space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Object.entries(editingMeasurements.measurements).map(([measureName, value]) => (
+              <div key={measureName}>
+                <label className="block text-sm font-medium text-gray-700 mb-1 capitalize">
+                  {measureName.replace(/([A-Z])/g, ' $1').trim()}
+                </label>
+                <input
+                  type="number"
+                  step="0.25"
+                  value={value || ''}
+                  onChange={(e) => setEditingMeasurements(prev => ({
+                    ...prev,
+                    measurements: {
+                      ...prev.measurements,
+                      [measureName]: e.target.value
+                    }
+                  }))}
+                  className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="flex justify-end space-x-4 pt-4 border-t">
+            <button
+              onClick={() => setShowEditMeasurementsModal(false)}
+              className="px-4 py-2 text-gray-600 hover:text-gray-800"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveMeasurements}
+              className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+            >
+              Save Changes
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const TailorDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -475,6 +549,12 @@ const TailorDashboard = () => {
   const [lastChecked, setLastChecked] = useState(new Date());
   const [notifiedDueDates, setNotifiedDueDates] = useState(new Set());
   const [dueDateWarningDays, setDueDateWarningDays] = useState(2);
+
+
+  const [phoneCheckStep, setPhoneCheckStep] = useState('phone'); // 'phone', 'existing-orders', 'relationship', 'form'
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [existingOrders, setExistingOrders] = useState([]);
+  const [selectedRelationship, setSelectedRelationship] = useState('');
 
 // Add this state near other state declarations at the top
   const [dueDateSettings, setDueDateSettings] = useState({
@@ -509,6 +589,8 @@ const [customCategoryForm, setCustomCategoryForm] = useState({
 });
 const [customMeasurementInput, setCustomMeasurementInput] = useState('');
 const [customCategories, setCustomCategories] = useState({});
+const [showEditMeasurementsModal, setShowEditMeasurementsModal] = useState(false);
+const [editingMeasurements, setEditingMeasurements] = useState(null);
 
 
 // Define measurement categories
@@ -1236,6 +1318,120 @@ const handleCustomerExpand = (customer) => {
   }));
 };
 
+
+const handleEditMeasurements = async (customer, garmentType) => {
+  // Check for active orders
+  const activeOrders = orders.filter(order => 
+    (order.customerId === customer.id || order.customerPhone === customer.phone) &&
+    ['pending', 'confirmed', 'in_progress', 'ready'].includes(order.status)
+  );
+
+  if (activeOrders.length > 0) {
+    const confirmEdit = window.confirm(
+      `This customer has ${activeOrders.length} active order(s). Editing measurements may affect ongoing orders. Do you want to continue?`
+    );
+    if (!confirmEdit) return;
+  }
+
+  // Get the latest measurements for this garment type
+  const measurementHistory = customerMeasurementHistory[customer.id];
+  const latestMeasurement = measurementHistory?.orderMeasurements?.[garmentType]?.[0];
+  
+  if (latestMeasurement) {
+    setEditingMeasurements({
+      customer,
+      garmentType,
+      measurements: { ...latestMeasurement.measurements }
+    });
+    setShowEditMeasurementsModal(true);
+  }
+};
+
+const handleDeleteMeasurements = async (customer, garmentType) => {
+  // Check for active orders
+  const activeOrders = orders.filter(order => 
+    (order.customerId === customer.id || order.customerPhone === customer.phone) &&
+    ['pending', 'confirmed', 'in_progress', 'ready'].includes(order.status)
+  );
+
+  if (activeOrders.length > 0) {
+    const confirmDelete = window.confirm(
+      `This customer has ${activeOrders.length} active order(s). Deleting measurements may affect ongoing orders. Do you want to continue?`
+    );
+    if (!confirmDelete) return;
+  }
+
+  const finalConfirm = window.confirm(
+    `Are you sure you want to delete all ${garmentType} measurements for ${customer.name}? This action cannot be undone.`
+  );
+  
+  if (finalConfirm) {
+    try {
+      // Delete from Firebase
+      const customerRef = doc(db, 'customers', customer.id);
+      await updateDoc(customerRef, {
+        [`measurements.${garmentType}`]: null,
+        updatedAt: serverTimestamp()
+      });
+
+      // Update local state
+      setCustomerMeasurementHistory(prev => ({
+        ...prev,
+        [customer.id]: {
+          ...prev[customer.id],
+          orderMeasurements: {
+            ...prev[customer.id].orderMeasurements,
+            [garmentType]: undefined
+          }
+        }
+      }));
+
+      alert('Measurements deleted successfully!');
+    } catch (error) {
+      console.error('Error deleting measurements:', error);
+      alert('Failed to delete measurements');
+    }
+  }
+};
+
+const handleSaveMeasurements = async () => {
+  try {
+    const { customer, garmentType, measurements, orderId } = editingMeasurements;
+    
+    if (orderId) {
+      // Update specific order's measurements
+      const orderRef = doc(db, 'orders', orderId);
+      await updateDoc(orderRef, {
+        measurements: measurements,
+        updatedAt: serverTimestamp(),
+        measurementsLastUpdated: serverTimestamp()
+      });
+    } else {
+      // Fallback to customer document (for older records)
+      const customerRef = doc(db, 'customers', customer.id);
+      await updateDoc(customerRef, {
+        [`measurements.${garmentType}`]: measurements,
+        updatedAt: serverTimestamp(),
+        lastMeasurementUpdate: serverTimestamp()
+      });
+    }
+
+    // Refresh customer measurement history
+    const history = buildMeasurementHistoryFromOrders(customer.id, customer.phone);
+    setCustomerMeasurementHistory(prev => ({
+      ...prev,
+      [customer.id]: history
+    }));
+
+    setShowEditMeasurementsModal(false);
+    setEditingMeasurements(null);
+    alert('Measurements updated successfully!');
+  } catch (error) {
+    console.error('Error updating measurements:', error);
+    alert('Failed to update measurements');
+  }
+};
+
   // Request notification permission on component mount
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
@@ -1271,6 +1467,76 @@ useEffect(() => {
     
     loadCustomCategories();
   }, []);
+
+  const handleEditSingleMeasurement = (customer, garmentType, record, recordIndex) => {
+
+    const activeOrders = orders.filter(order => 
+    (order.customerId === customer.id || order.customerPhone === customer.phone) &&
+    ['pending', 'confirmed', 'in_progress', 'ready'].includes(order.status)
+  );
+
+  if (activeOrders.length > 0) {
+    const confirmEdit = window.confirm(
+      `This customer has ${activeOrders.length} active order(s). Editing measurements may affect ongoing orders. Do you want to continue?`
+    );
+    if (!confirmEdit) return;
+  }
+
+
+
+  setEditingMeasurements({
+    customer,
+    garmentType,
+    measurements: { ...record.measurements },
+    orderId: record.orderId,
+    recordIndex
+  });
+  setShowEditMeasurementsModal(true);
+};
+
+const handleDeleteSingleMeasurement = async (customer, garmentType, orderId) => {
+
+  const activeOrders = orders.filter(order => 
+    (order.customerId === customer.id || order.customerPhone === customer.phone) &&
+    ['pending', 'confirmed', 'in_progress', 'ready'].includes(order.status)
+  );
+
+  if (activeOrders.length > 0) {
+    const confirmDelete = window.confirm(
+      `This customer has ${activeOrders.length} active order(s). Deleting measurements may affect ongoing orders. Do you want to continue?`
+    );
+    if (!confirmDelete) return;
+  }
+
+  const finalConfirm = window.confirm(
+    `Are you sure you want to delete the measurements for order #${orderId?.slice(-8)}? This action cannot be undone.`
+  );
+  
+  if (finalConfirm) {
+    try {
+      // Find and update the specific order to remove measurements
+      const orderRef = doc(db, 'orders', orderId);
+      await updateDoc(orderRef, {
+        measurements: {},
+        measurementsDeleted: true,
+        measurementsDeletedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      // Refresh the customer measurement history
+      const history = buildMeasurementHistoryFromOrders(customer.id, customer.phone);
+      setCustomerMeasurementHistory(prev => ({
+        ...prev,
+        [customer.id]: history
+      }));
+
+      alert('Measurement record deleted successfully!');
+    } catch (error) {
+      console.error('Error deleting measurement record:', error);
+      alert('Failed to delete measurement record');
+    }
+  }
+};
 
 
   const handleLogout = async () => {
@@ -1316,8 +1582,8 @@ const handleUpdateOrderStatus = async (orderId, newStatus, newProgress = null) =
         if (newStatus === 'ready' || newStatus === 'delivered') {
             try {
                 const order = orders.find(o => o.id === orderId);
-                console.log('📧 Attempting to send email for order:', orderId);
-                console.log('📋 Order data found:', order);
+                console.log(' Attempting to send email for order:', orderId);
+                console.log(' Order data found:', order);
                 
                 if (order) {
                     // Prepare email data with fallbacks and validation
@@ -1333,49 +1599,49 @@ const handleUpdateOrderStatus = async (orderId, newStatus, newProgress = null) =
                         total: formatPrice(order.totalAmount || order.price || order.total || '0.00')
                     };
 
-                    console.log('📤 Email data prepared:', emailData);
+                    console.log('Email data prepared:', emailData);
 
                     // Validate email data
                     if (!emailData.customerEmail) {
-                        console.error('❌ No customer email found for order:', orderId);
+                        console.error(' No customer email found for order:', orderId);
                         // Show user notification
-                        alert(`⚠️ Cannot send email: No email address found for order ${orderId}`);
+                        alert(`Cannot send email: No email address found for order ${orderId}`);
                         return; // Exit email sending but don't break the status update
                     }
 
                     // Send appropriate email
                     let emailResult;
                     if (newStatus === 'ready') {
-                        console.log('📦 Sending "Order Ready" email...');
+                        console.log('Sending "Order Ready" email...');
                         emailResult = await sendOrderReadyEmail(emailData);
                     } else if (newStatus === 'delivered') {
-                        console.log('🚚 Sending "Order Delivered" email...');
+                        console.log('Sending "Order Delivered" email...');
                         emailResult = await sendOrderDeliveredEmail(emailData);
                     }
 
                     // Handle email result
                     if (emailResult && emailResult.success) {
-                        console.log('✅ Email sent successfully:', emailResult);
+                        console.log('Email sent successfully:', emailResult);
                         // Show success notification to tailor
-                        alert(`✅ Customer notified! Email sent to ${emailData.customerEmail}`);
+                        alert(` Customer notified! Email sent to ${emailData.customerEmail}`);
                     } else {
-                        console.error('❌ Email failed:', emailResult);
+                        console.error('Email failed:', emailResult);
                         // Show error notification to tailor
-                        alert(`❌ Failed to send email: ${emailResult?.error?.message || 'Unknown error'}`);
+                        alert(` Failed to send email: ${emailResult?.error?.message || 'Unknown error'}`);
                     }
                 } else {
-                    console.error('❌ Order not found in local data:', orderId);
-                    alert(`⚠️ Order data not found for ${orderId}`);
+                    console.error(' Order not found in local data:', orderId);
+                    alert(` Order data not found for ${orderId}`);
                 }
             } catch (emailError) {
-                console.error('❌ Email notification error:', emailError);
+                console.error(' Email notification error:', emailError);
                 // Show detailed error to help with debugging
-                alert(`❌ Email Error: ${emailError.message}\n\nOrder status was updated successfully, but email failed.`);
+                alert(` Email Error: ${emailError.message}\n\nOrder status was updated successfully, but email failed.`);
                 // Don't throw error - email failure shouldn't break the status update
             }
         }
         
-        console.log('✅ Order status updated successfully');
+        console.log('Order status updated successfully');
 
         // Notify the customer about the order status update
         const notification = {
@@ -2648,8 +2914,10 @@ const NotificationDropdown = () => {
                                     {garmentType} Measurements ({measurements.length} records)
                                   </h5>
                                 </div>
+                                {/* Edit/Delete buttons for garment type */}
+  {/* Header for garment type - no edit/delete buttons here */}
                                 <div className="p-4 space-y-3">
-                                  {measurements.slice(0, 3).map((record, recordIndex) => (
+                                  {measurements.map((record, recordIndex) => (
                                     <div key={recordIndex} className="border border-gray-100 rounded-lg p-3">
                                       <div className="flex justify-between items-start mb-2">
                                         <div>
@@ -2665,7 +2933,25 @@ const NotificationDropdown = () => {
                                             </p>
                                           )}
                                         </div>
-                                        <StatusBadge status={record.status} />
+                                        <div className="flex items-center space-x-2">
+  <StatusBadge status={record.status} />
+  <div className="flex space-x-1">
+    <button
+      onClick={() => handleEditSingleMeasurement(customer, garmentType, record, recordIndex)}
+      className="px-2 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 transition-colors text-xs"
+      title="Edit this measurement"
+    >
+      Edit
+    </button>
+    <button
+      onClick={() => handleDeleteSingleMeasurement(customer, garmentType, record.orderId)}
+      className="px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200 transition-colors text-xs"
+      title="Delete this measurement"
+    >
+      Delete
+    </button>
+  </div>
+</div>
                                       </div>
                                       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 mt-3">
                                         {Object.entries(record.measurements).map(([measureName, value]) => (
@@ -2681,13 +2967,6 @@ const NotificationDropdown = () => {
                                       </div>
                                     </div>
                                   ))}
-                                  {measurements.length > 3 && (
-                                    <div className="text-center py-2">
-                                      <p className="text-sm text-gray-500">
-                                        +{measurements.length - 3} more measurement records
-                                      </p>
-                                    </div>
-                                  )}
                                 </div>
                               </div>
                             ))}
@@ -2905,6 +3184,15 @@ const NotificationDropdown = () => {
   handleRemoveCustomMeasurement={handleRemoveCustomMeasurement}
   handleSaveCustomCategory={handleSaveCustomCategory}
 />
+
+<EditMeasurementsModal
+  showEditMeasurementsModal={showEditMeasurementsModal}
+  setShowEditMeasurementsModal={setShowEditMeasurementsModal}
+  editingMeasurements={editingMeasurements}
+  setEditingMeasurements={setEditingMeasurements}
+  handleSaveMeasurements={handleSaveMeasurements}
+/>
+
       <OrderModal />
       <DayModal />
       <PhotoModal />
