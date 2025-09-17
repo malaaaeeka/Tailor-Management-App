@@ -95,6 +95,8 @@ const ProgressRing = ({ progress = 0, size = 'md' }) => {
 };
 
   // Add this complete component before the TailorDashboard
+const RELATIONSHIPS = ['self', 'mother', 'father', 'son', 'daughter', 'sister', 'brother', 'friend'];
+
 const ManualOrderModal = ({ 
   showManualOrderModal, 
   setShowManualOrderModal,
@@ -107,9 +109,120 @@ const ManualOrderModal = ({
   handleCategoryChange,
   handleMeasurementChange,
   customCategories,
-  handleDeleteCustomCategory
+  handleDeleteCustomCategory,
+  // new props (all exist in your TailorDashboard state)
+  phoneCheckStep,
+  setPhoneCheckStep,
+  phoneNumber,
+  setPhoneNumber,
+  existingOrders,
+  setExistingOrders,
+  selectedRelationship,
+  setSelectedRelationship
 }) => {
+  // --- START: Moved Hooks to top level ---
+  const [checkingPhone, setCheckingPhone] = useState(false);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+
+  const categoryKeyFromName = useCallback((name) => {
+    // Try built-ins
+    for (const [key, cfg] of Object.entries(measurementCategories)) {
+      if (cfg?.name?.toLowerCase() === String(name || '').toLowerCase()) return key;
+    }
+    // Try custom
+    for (const [key, cfg] of Object.entries(customCategories || {})) {
+      if (cfg?.name?.toLowerCase() === String(name || '').toLowerCase()) return key;
+    }
+    return '';
+  }, [measurementCategories, customCategories]);
+  // --- END: Moved Hooks to top level ---
+
   if (!showManualOrderModal) return null;
+
+  const handleClose = () => {
+    setShowManualOrderModal(false);
+  };
+
+  const handlePhoneNext = async () => {
+    const phone = (phoneNumber || '').trim();
+    if (!phone || phone.length < 7) {
+      alert('Please enter a valid phone number.');
+      return;
+    }
+    setCheckingPhone(true);
+    try {
+      // Save phone to the form immediately
+      setManualOrderForm(prev => ({ ...prev, customerPhone: phone }));
+
+      // Check if any customer exists with this phone
+      const customersQ = query(collection(db, 'customers'), where('phone', '==', phone));
+      const snapshot = await getDocs(customersQ);
+      if (!snapshot.empty) {
+        setPhoneCheckStep('relationship');
+      } else {
+        // No customer yet → go straight to form
+        setPhoneCheckStep('form');
+      }
+    } catch (e) {
+      console.error('Phone check failed:', e);
+      // Still let them proceed to form
+      setPhoneCheckStep('form');
+    } finally {
+      setCheckingPhone(false);
+    }
+  };
+
+  const handleRelationshipPick = async (relation) => {
+    setSelectedRelationship(relation);
+    setManualOrderForm(prev => ({ ...prev, relationship: relation }));
+    setLoadingOrders(true);
+    try {
+      // Load existing orders by phone + relationship; sort locally by createdAt desc
+      const ordersQ = query(
+        collection(db, 'orders'),
+        where('customerPhone', '==', phoneNumber),
+        where('relationship', '==', relation)
+      );
+      const res = await getDocs(ordersQ);
+      const list = res.docs.map(d => ({ id: d.id, ...d.data() }));
+      list.sort((a, b) => {
+        const da = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+        const db_ = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+        return db_ - da;
+      });
+      setExistingOrders(list);
+    } catch (e) {
+      console.error('Failed to fetch existing orders:', e);
+      setExistingOrders([]);
+    } finally {
+      setLoadingOrders(false);
+    }
+  };
+
+  // Renamed from useExistingOrderToPrefill to handlePrefillWithExistingOrder
+  const handlePrefillWithExistingOrder = (order) => {
+    // Try to align garmentType name -> category key
+    const key = categoryKeyFromName(order.garmentType);
+    if (key) {
+      setSelectedCategory(key);
+    }
+    setManualOrderForm(prev => ({
+      ...prev,
+      customerName: order.customerName || prev.customerName,
+      customerEmail: order.customerEmail || prev.customerEmail,
+      customerAddress: order.customerAddress || prev.customerAddress,
+      garmentType: order.garmentType || prev.garmentType,
+      fabric: order.fabric || prev.fabric,
+      specialInstructions: order.specialInstructions || prev.specialInstructions,
+      totalAmount: (order.totalAmount || order.price || prev.totalAmount || ''),
+      measurements: order.measurements || {}
+    }));
+    setPhoneCheckStep('form');
+  };
+
+  const continueWithoutPrefill = () => {
+    setPhoneCheckStep('form');
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -117,207 +230,294 @@ const ManualOrderModal = ({
         <div className="p-6 border-b bg-gradient-to-r from-gray-50 to-white">
           <div className="flex justify-between items-center">
             <h3 className="text-2xl font-bold text-gray-900">Create New Order</h3>
-            <button onClick={() => setShowManualOrderModal(false)} className="text-gray-400 hover:text-gray-600">
+            <button onClick={handleClose} className="text-gray-400 hover:text-gray-600">
               <X size={24} />
             </button>
           </div>
         </div>
-        
-        <form onSubmit={handleSubmitOrder} className="p-6 space-y-6" key="manual-order-form">
-          {/* Customer Information */}
-          <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-6 rounded-xl">
-            <h4 className="font-semibold text-gray-900 mb-4">Customer Information</h4>
-            <div className="grid grid-cols-2 gap-4">
-              <input
-                type="text"
-                placeholder="Customer Name"
-                value={manualOrderForm.customerName}
-                onChange={(e) => setManualOrderForm(prev => ({ ...prev, customerName: e.target.value }))}
-                className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                required
-              />
-              <input
-      type="tel"
-      placeholder="Phone Number"
-      value={manualOrderForm.customerPhone}
-      onChange={(e) => setManualOrderForm(prev => ({ ...prev, customerPhone: e.target.value }))}
-      onBlur={async (e) => {
-        const phone = e.target.value;
-        if (phone.length >= 10 && selectedCategory) {
-          const existingData = await getCustomerMeasurements(phone, selectedCategory);
-          if (existingData) {
-            setManualOrderForm(prev => ({
-              ...prev,
-              measurements: existingData.measurements,
-              customerName: existingData.customerName || prev.customerName
-            }));
-            alert('Previous measurements loaded!');
-          }
-        }
-      }}
-      className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-      required
-    />
-    
-              <input
-                type="email"
-                placeholder="Email (Optional)"
-                value={manualOrderForm.customerEmail}
-                onChange={(e) => setManualOrderForm(prev => ({ ...prev, customerEmail: e.target.value }))}
-                className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-              <input
-                type="text"
-                placeholder="Address (Optional)"
-                value={manualOrderForm.customerAddress}
-                onChange={(e) => setManualOrderForm(prev => ({ ...prev, customerAddress: e.target.value }))}
-                className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
+
+        {/* Stepper */}
+        <div className="px-6 pt-4">
+          <div className="flex items-center text-sm">
+            <div className={`font-medium ${phoneCheckStep !== 'phone' ? 'text-green-600' : 'text-gray-700'}`}>Phone</div>
+            <div className="mx-2 text-gray-300">→</div>
+            <div className={`font-medium ${phoneCheckStep === 'relationship' ? 'text-gray-700' : phoneCheckStep === 'form' ? 'text-green-600' : 'text-gray-400'}`}>
+              Relationship
             </div>
+            <div className="mx-2 text-gray-300">→</div>
+            <div className={`font-medium ${phoneCheckStep === 'form' ? 'text-gray-700' : 'text-gray-400'}`}>Form</div>
           </div>
+        </div>
 
-          {/* Garment Category Selection */}
-          <div className="bg-gradient-to-r from-green-50 to-teal-50 p-6 rounded-xl">
-            <h4 className="font-semibold text-gray-900 mb-4">Select Garment Category</h4>
-         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-  {[
-    ...Object.entries(measurementCategories).filter(([key]) => key !== 'add'),
-    ...Object.entries(customCategories),
-    ...Object.entries(measurementCategories).filter(([key]) => key === 'add')
-  ].map(([key, category]) => (
-    <div key={key} className="relative">
-      <button
-        type="button"
-        onClick={() => handleCategoryChange(key)}
-        className={`w-full p-4 rounded-lg border-2 transition-all ${
-          selectedCategory === key
-            ? 'border-blue-500 bg-blue-50 text-blue-700'
-            : 'border-gray-200 hover:border-gray-300'
-        } ${key === 'add' ? 'border-green-200 hover:border-green-300 bg-green-50' : ''}`}
-      >
-        {key === 'add' ? (
-          <div className="flex items-center justify-center">
-            <Plus className="h-4 w-4 sm:h-5 sm:w-5 mr-1 sm:mr-2" />
-            {category.name}
-          </div>
-        ) : (
-          category.name
-        )}
-      </button>
-      
-      {/* Delete button for custom categories only */}
-      {customCategories[key] && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleDeleteCustomCategory(key);
-          }}
-          className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors text-xs"
-          title="Delete custom category"
-        >
-          <X className="h-3 w-3" />
-        </button>
-      )}
-    </div>
-  ))}
-</div>
-          </div>
-
-          {/* Dynamic Measurements */}
-          {selectedCategory && (
-             <div className="bg-gradient-to-r from-yellow-50 to-orange-50 p-6 rounded-xl">
-              <h4 className="font-semibold text-gray-900 mb-4">
-                {(measurementCategories[selectedCategory] || customCategories[selectedCategory])?.name} Measurements (inches)
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {(measurementCategories[selectedCategory] || customCategories[selectedCategory])?.measurements.map(measurement => (
-                  <div key={measurement}>
-                    <label className="block text-sm font-medium text-gray-700 mb-1 capitalize">
-                      {measurement.replace(/([A-Z])/g, ' $1').trim()}
-                    </label>
-                    <input
-                      type="number"
-                      step="0.25"
-                      placeholder="0.00"
-                      value={manualOrderForm.measurements[measurement] || ''}
-                      onChange={(e) => handleMeasurementChange(measurement, e.target.value)}
-                      className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                ))}
+        {/* Content */}
+        <div className="p-6 space-y-6">
+          {/* Step 1: Phone */}
+          {phoneCheckStep === 'phone' && (
+            <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-6 rounded-xl space-y-4">
+              <h4 className="font-semibold text-gray-900">Customer Phone</h4>
+              <input
+                type="tel"
+                placeholder="Phone Number"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 w-full"
+                autoFocus
+              />
+              <div className="flex justify-end">
+                <EnhancedButton onClick={handlePhoneNext} variant="luxury" disabled={checkingPhone}>
+                  {checkingPhone ? 'Checking...' : 'Next'}
+                </EnhancedButton>
               </div>
             </div>
           )}
 
-          {/* Order Details */}
-          <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-6 rounded-xl">
-            <h4 className="font-semibold text-gray-900 mb-4">Order Details</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <input
-                type="text"
-                placeholder="Fabric Type"
-                value={manualOrderForm.fabric}
-                onChange={(e) => setManualOrderForm(prev => ({ ...prev, fabric: e.target.value }))}
-                className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-              <input
-                type="number"
-                placeholder="Total Amount ($)"
-                value={manualOrderForm.totalAmount}
-                onChange={(e) => setManualOrderForm(prev => ({ ...prev, totalAmount: e.target.value }))}
-                className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                required
-              />
-              <input
-                type="date"
-                min={new Date().toISOString().split('T')[0]}
-                value={manualOrderForm.dueDate}
-                onChange={(e) => setManualOrderForm(prev => ({ ...prev, dueDate: e.target.value }))}
-                className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-              <select
-                value={manualOrderForm.urgency}
-                onChange={(e) => setManualOrderForm(prev => ({ ...prev, urgency: e.target.value }))}
-                className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="normal">Normal</option>
-                <option value="urgent">Urgent</option>
-                <option value="rush">Rush</option>
-              </select>
-            </div>
-  <textarea
-  placeholder="Special Instructions (Optional)"
-  value={manualOrderForm.specialInstructions}
-  onChange={(e) => setManualOrderForm(prev => ({ ...prev, specialInstructions: e.target.value }))}
-  className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 mt-4"
-  rows="3"
-/>
-          </div>
+          {/* Step 2: Relationship */}
+          {phoneCheckStep === 'relationship' && (
+            <div className="space-y-6">
+              <div className="bg-gradient-to-r from-green-50 to-teal-50 p-6 rounded-xl">
+                <h4 className="font-semibold text-gray-900 mb-3">Who are you placing the order for?</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {RELATIONSHIPS.map(rel => (
+                    <button
+                      key={rel}
+                      type="button"
+                      onClick={() => handleRelationshipPick(rel)}
+                      className={`px-3 py-2 rounded-lg border text-sm capitalize ${
+                        selectedRelationship === rel
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      {rel}
+                    </button>
+                  ))}
+                </div>
+                {loadingOrders && <p className="text-sm text-gray-600 mt-3">Loading existing orders…</p>}
+              </div>
 
-          {/* Submit Button */}
-          <div className="flex justify-end space-x-4">
-            <EnhancedButton
-              type="button"
-              variant="ghost"
-              onClick={() => setShowManualOrderModal(false)}
-            >
-              Cancel
-            </EnhancedButton>
-            <EnhancedButton
-              type="submit"
-              variant="luxury"
-              disabled={!selectedCategory || !manualOrderForm.customerName || !manualOrderForm.totalAmount}
-            >
-              Create Order
-            </EnhancedButton>
-          </div>
-        </form>
+              <div className="bg-gradient-to-r from-yellow-50 to-orange-50 p-6 rounded-xl">
+                <h4 className="font-semibold text-gray-900 mb-3">Existing Orders</h4>
+                {existingOrders?.length ? (
+                  <div className="space-y-2">
+                    {existingOrders.map((o) => (
+                      <div key={o.id} className="p-3 bg-white rounded-lg border flex items-center justify-between">
+                        <div>
+                          <p className="font-medium text-gray-900">
+                            #{o.id?.slice(-8)} • {o.garmentType || 'Custom Order'}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {o.createdAt?.toDate ? o.createdAt.toDate().toLocaleString() : '—'}
+                          </p>
+                        </div>
+                        <EnhancedButton size="sm" variant="outline" onClick={() => handlePrefillWithExistingOrder(o)}>
+                          Use this
+                        </EnhancedButton>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-600">No existing orders for this relationship.</p>
+                )}
+                <div className="flex justify-end mt-3">
+                  <EnhancedButton variant="luxury" onClick={continueWithoutPrefill}>
+                    Continue without prefilling
+                  </EnhancedButton>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Form */}
+          {phoneCheckStep === 'form' && (
+            <form onSubmit={handleSubmitOrder} className="space-y-6" key="manual-order-form">
+              {/* Customer Information */}
+              <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-6 rounded-xl">
+                <h4 className="font-semibold text-gray-900 mb-4">Customer Information</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <input
+                    type="text"
+                    placeholder="Customer Name"
+                    value={manualOrderForm.customerName}
+                    onChange={(e) => setManualOrderForm(prev => ({ ...prev, customerName: e.target.value }))}
+                    className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                  <input
+                    type="tel"
+                    placeholder="Phone Number"
+                    value={phoneNumber}
+                    disabled
+                    className="p-3 border rounded-lg bg-gray-100 cursor-not-allowed"
+                  />
+                  <input
+                    type="email"
+                    placeholder="Email (Optional)"
+                    value={manualOrderForm.customerEmail}
+                    onChange={(e) => setManualOrderForm(prev => ({ ...prev, customerEmail: e.target.value }))}
+                    className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Address (Optional)"
+                    value={manualOrderForm.customerAddress}
+                    onChange={(e) => setManualOrderForm(prev => ({ ...prev, customerAddress: e.target.value }))}
+                    className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Relationship"
+                    value={manualOrderForm.relationship || selectedRelationship}
+                    onChange={(e) => {
+                      setSelectedRelationship(e.target.value);
+                      setManualOrderForm(prev => ({ ...prev, relationship: e.target.value }));
+                    }}
+                    className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 col-span-2"
+                  />
+                </div>
+              </div>
+
+              {/* Garment Category Selection (unchanged UI; click loads existing measurements if any from previous pick) */}
+              <div className="bg-gradient-to-r from-green-50 to-teal-50 p-6 rounded-xl">
+                <h4 className="font-semibold text-gray-900 mb-4">Select Garment Category</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {[
+                    ...Object.entries(measurementCategories).filter(([key]) => key !== 'add'),
+                    ...Object.entries(customCategories),
+                    ...Object.entries(measurementCategories).filter(([key]) => key === 'add')
+                  ].map(([key, category]) => (
+                    <div key={key} className="relative">
+                      <button
+                        type="button"
+                        onClick={() => handleCategoryChange(key)}
+                        className={`w-full p-4 rounded-lg border-2 transition-all ${
+                          selectedCategory === key
+                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                            : 'border-gray-200 hover:border-gray-300'
+                        } ${key === 'add' ? 'border-green-200 hover:border-green-300 bg-green-50' : ''}`}
+                      >
+                        {key === 'add' ? (
+                          <div className="flex items-center justify-center">
+                            <Plus className="h-4 w-4 sm:h-5 sm:w-5 mr-1 sm:mr-2" />
+                            {category.name}
+                          </div>
+                        ) : (
+                          category.name
+                        )}
+                      </button>
+
+                      {customCategories[key] && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteCustomCategory(key);
+                          }}
+                          className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors text-xs"
+                          title="Delete custom category"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Dynamic Measurements */}
+              {selectedCategory && (
+                <div className="bg-gradient-to-r from-yellow-50 to-orange-50 p-6 rounded-xl">
+                  <h4 className="font-semibold text-gray-900 mb-4">
+                    {(measurementCategories[selectedCategory] || customCategories[selectedCategory])?.name} Measurements (inches)
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {(measurementCategories[selectedCategory] || customCategories[selectedCategory])?.measurements.map(measurement => (
+                      <div key={measurement}>
+                        <label className="block text-sm font-medium text-gray-700 mb-1 capitalize">
+                          {measurement.replace(/([A-Z])/g, ' $1').trim()}
+                        </label>
+                        <input
+                          type="number"
+                          step="0.25"
+                          placeholder="0.00"
+                          value={manualOrderForm.measurements[measurement] || ''}
+                          onChange={(e) => handleMeasurementChange(measurement, e.target.value)}
+                          className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Order Details */}
+              <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-6 rounded-xl">
+                <h4 className="font-semibold text-gray-900 mb-4">Order Details</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <input
+                    type="text"
+                    placeholder="Fabric Type"
+                    value={manualOrderForm.fabric}
+                    onChange={(e) => setManualOrderForm(prev => ({ ...prev, fabric: e.target.value }))}
+                    className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                  <input
+                    type="number"
+                    placeholder="Total Amount ($)"
+                    value={manualOrderForm.totalAmount}
+                    onChange={(e) => setManualOrderForm(prev => ({ ...prev, totalAmount: e.target.value }))}
+                    className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                  <input
+                    type="date"
+                    min={new Date().toISOString().split('T')[0]}
+                    value={manualOrderForm.dueDate}
+                    onChange={(e) => setManualOrderForm(prev => ({ ...prev, dueDate: e.target.value }))}
+                    className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                  <select
+                    value={manualOrderForm.urgency}
+                    onChange={(e) => setManualOrderForm(prev => ({ ...prev, urgency: e.target.value }))}
+                    className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="normal">Normal</option>
+                    <option value="urgent">Urgent</option>
+                    <option value="rush">Rush</option>
+                  </select>
+                </div>
+                <textarea
+                  placeholder="Special Instructions (Optional)"
+                  value={manualOrderForm.specialInstructions}
+                  onChange={(e) => setManualOrderForm(prev => ({ ...prev, specialInstructions: e.target.value }))}
+                  className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 mt-4"
+                  rows="3"
+                />
+              </div>
+
+              {/* Submit Button */}
+              <div className="flex justify-end space-x-4">
+                <EnhancedButton
+                  type="button"
+                  variant="ghost"
+                  onClick={handleClose}
+                >
+                  Cancel
+                </EnhancedButton>
+                <EnhancedButton
+                  type="submit"
+                  variant="luxury"
+                  disabled={!selectedCategory || !manualOrderForm.customerName || !manualOrderForm.totalAmount}
+                >
+                  Create Order
+                </EnhancedButton>
+              </div>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   );
 };
-
 const CustomCategoryModal = ({ 
   showCustomCategoryModal, 
   setShowCustomCategoryModal,
@@ -576,7 +776,8 @@ const [manualOrderForm, setManualOrderForm] = useState({
   urgency: 'normal',
   dueDate: '',
   totalAmount: '',
-  measurements: {}
+  measurements: {},
+  relationship: '' // <-- add this
 });
 
 const [expandedCustomer, setExpandedCustomer] = useState(null);
@@ -1056,6 +1257,7 @@ const handleSubmitOrder = async (e) => {
   try {
     const orderData = {
       ...manualOrderForm,
+       relationship: manualOrderForm.relationship || selectedRelationship || 'self', // <-- add
       status: 'confirmed',
       progress: 10,
       createdAt: serverTimestamp(),
@@ -1084,8 +1286,9 @@ if (selectedCategory && manualOrderForm.measurements && Object.keys(manualOrderF
     setManualOrderForm({
       customerPhone: '', customerName: '', customerEmail: '', customerAddress: '',
       garmentType: '', fabric: '', specialInstructions: '', urgency: 'normal',
-      dueDate: '', totalAmount: '', measurements: {}
+      dueDate: '', totalAmount: '', measurements: {}, relationship: '' 
     });
+    setSelectedRelationship('');
     setSelectedCategory('');
     setShowManualOrderModal(false);
     
@@ -2251,6 +2454,11 @@ const NotificationDropdown = () => {
                   <p className="text-sm text-gray-600">Address</p>
                   <p className="font-medium text-gray-900">{customer.address || 'N/A'}</p>
                 </div>
+
+                 <div>
+    <p className="text-sm text-gray-600">Relationship</p>
+    <p className="font-medium text-gray-900">{selectedOrder.relationship || 'N/A'}</p>
+  </div>
               </div>
             </div>
 
@@ -3149,12 +3357,33 @@ const NotificationDropdown = () => {
     
     {/* Add Order Button */}
     <button
-      onClick={() => setShowManualOrderModal(true)}
-      className="flex items-center px-3 sm:px-6 py-2 sm:py-3 rounded-lg sm:rounded-xl font-medium text-xs sm:text-sm transition-all duration-300 bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg hover:from-green-600 hover:to-emerald-700 transform hover:scale-105"
-    >
-      <Plus className="h-5 w-5 mr-2" />
-      <span className="hidden sm:inline">Add Order</span>
-    </button>
+  onClick={() => {
+    setPhoneNumber('');
+    setSelectedRelationship('');
+    setExistingOrders([]);
+    setPhoneCheckStep('phone');
+    setSelectedCategory('');
+    setManualOrderForm({
+      customerPhone: '',
+      customerName: '',
+      customerEmail: '',
+      customerAddress: '',
+      garmentType: '',
+      fabric: '',
+      specialInstructions: '',
+      urgency: 'normal',
+      dueDate: '',
+      totalAmount: '',
+      measurements: {},
+      relationship: ''
+    });
+    setShowManualOrderModal(true);
+  }}
+  className="flex items-center px-3 sm:px-6 py-2 sm:py-3 rounded-lg sm:rounded-xl font-medium text-xs sm:text-sm transition-all duration-300 bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg hover:from-green-600 hover:to-emerald-700 transform hover:scale-105"
+>
+  <Plus className="h-5 w-5 mr-2" />
+  <span className="hidden sm:inline">Add Order</span>
+</button>
   </nav>
 </div>
       <ManualOrderModal 
@@ -3171,6 +3400,14 @@ const NotificationDropdown = () => {
   getCustomerMeasurements={getCustomerMeasurements}
   customCategories={customCategories}
   handleDeleteCustomCategory={handleDeleteCustomCategory}
+  phoneCheckStep={phoneCheckStep}
+  setPhoneCheckStep={setPhoneCheckStep}
+  phoneNumber={phoneNumber}
+  setPhoneNumber={setPhoneNumber}
+  existingOrders={existingOrders}
+  setExistingOrders={setExistingOrders}
+  selectedRelationship={selectedRelationship}
+  setSelectedRelationship={setSelectedRelationship}
 />
 
 <CustomCategoryModal
