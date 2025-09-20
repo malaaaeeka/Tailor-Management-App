@@ -95,7 +95,7 @@ const ProgressRing = ({ progress = 0, size = 'md' }) => {
 };
 
   // Add this complete component before the TailorDashboard
-const RELATIONSHIPS = ['self', 'mother', 'father', 'son', 'daughter', 'sister', 'brother', 'friend'];
+const RELATIONSHIPS = ['self', 'mother', 'father', 'son', 'daughter', 'sister', 'brother', 'friend','custom'];
 
 const ManualOrderModal = ({ 
   showManualOrderModal, 
@@ -118,11 +118,16 @@ const ManualOrderModal = ({
   existingOrders,
   setExistingOrders,
   selectedRelationship,
-  setSelectedRelationship
+  setSelectedRelationship,
+  saveCustomRelationships,
 }) => {
   // --- START: Moved Hooks to top level ---
   const [checkingPhone, setCheckingPhone] = useState(false);
   const [loadingOrders, setLoadingOrders] = useState(false);
+
+  const [customRelationships, setCustomRelationships] = useState([]);
+  const [customRelationshipInput, setCustomRelationshipInput] = useState('');
+  const [showCustomRelationshipInput, setShowCustomRelationshipInput] = useState(false);
 
   const categoryKeyFromName = useCallback((name) => {
     // Try built-ins
@@ -276,22 +281,95 @@ const ManualOrderModal = ({
             <div className="space-y-6">
               <div className="bg-gradient-to-r from-green-50 to-teal-50 p-6 rounded-xl">
                 <h4 className="font-semibold text-gray-900 mb-3">Who are you placing the order for?</h4>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {RELATIONSHIPS.map(rel => (
-                    <button
-                      key={rel}
-                      type="button"
-                      onClick={() => handleRelationshipPick(rel)}
-                      className={`px-3 py-2 rounded-lg border text-sm capitalize ${
-                        selectedRelationship === rel
-                          ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      {rel}
-                    </button>
-                  ))}
-                </div>
+               <div className="space-y-3">
+  <select 
+    value={selectedRelationship} 
+    onChange={(e) => { 
+      if (e.target.value === 'custom') { 
+        setShowCustomRelationshipInput(true); 
+      } else { 
+        handleRelationshipPick(e.target.value); 
+      } 
+    }} 
+    className="w-full p-2 sm:p-3 text-sm sm:text-base border rounded-lg focus:ring-2 focus:ring-blue-500"
+  > 
+    <option value="">Select relationship</option> 
+    {RELATIONSHIPS.filter(rel => rel !== 'custom').map(rel => ( 
+      <option key={rel} value={rel} className="capitalize">{rel}</option> 
+    ))} 
+    {customRelationships.map(rel => ( 
+      <option key={rel} value={rel}>{rel}</option> 
+    ))} 
+    <option value="custom">+ Add Custom Relationship</option> 
+  </select>
+
+  {showCustomRelationshipInput && ( 
+    <div className="flex flex-col sm:flex-row gap-2"> 
+      <input 
+        type="text" 
+        placeholder="Enter custom relationship" 
+        value={customRelationshipInput} 
+        onChange={(e) => setCustomRelationshipInput(e.target.value)} 
+        className="flex-1 p-2 sm:p-3 text-sm sm:text-base border rounded-lg focus:ring-2 focus:ring-blue-500" 
+        autoFocus 
+      /> 
+      <div className="flex gap-2">
+        <button 
+          type="button" 
+          onClick={() => { 
+            if (customRelationshipInput.trim()) { 
+              const newRel = customRelationshipInput.trim(); 
+              setCustomRelationships(prev => [...prev, newRel]); 
+              setSelectedRelationship(newRel); 
+              setManualOrderForm(prev => ({ ...prev, relationship: newRel })); 
+              setCustomRelationshipInput(''); 
+              setShowCustomRelationshipInput(false); 
+            } 
+          }} 
+          className="px-3 sm:px-4 py-2 text-sm sm:text-base bg-blue-500 text-white rounded-lg hover:bg-blue-600 whitespace-nowrap" 
+        > 
+          Add 
+        </button> 
+        <button 
+          type="button" 
+          onClick={() => { 
+            setShowCustomRelationshipInput(false); 
+            setCustomRelationshipInput(''); 
+          }} 
+          className="px-3 sm:px-4 py-2 text-sm sm:text-base bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 whitespace-nowrap" 
+        > 
+          Cancel 
+        </button>
+      </div>
+    </div> 
+  )}
+
+  {customRelationships.length > 0 && ( 
+    <div className="space-y-2"> 
+      <p className="text-xs sm:text-sm font-medium text-gray-700">Custom Relationships:</p> 
+      <div className="flex flex-wrap gap-1 sm:gap-2"> 
+        {customRelationships.map(rel => ( 
+          <span key={rel} className="inline-flex items-center px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm bg-blue-100 text-blue-800"> 
+            <span className="truncate max-w-[100px] sm:max-w-none">{rel}</span>
+            <button 
+              type="button" 
+              onClick={() => { 
+                setCustomRelationships(prev => prev.filter(r => r !== rel)); 
+                if (selectedRelationship === rel) { 
+                  setSelectedRelationship(''); 
+                  setManualOrderForm(prev => ({ ...prev, relationship: '' })); 
+                } 
+              }} 
+              className="ml-1 sm:ml-2 text-blue-600 hover:text-blue-800 flex-shrink-0" 
+            > 
+              <X size={12} className="sm:w-3.5 sm:h-3.5" /> 
+            </button> 
+          </span> 
+        ))} 
+      </div> 
+    </div> 
+  )} 
+</div>
                 {loadingOrders && <p className="text-sm text-gray-600 mt-3">Loading existing orders…</p>}
               </div>
 
@@ -741,6 +819,8 @@ const TailorDashboard = () => {
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [orderFilter, setOrderFilter] = useState('all');
   const [customerSearchTerm, setCustomerSearchTerm] = useState('');
+
+  const [customRelationships, setCustomRelationships] = useState([]);
   
   // Notification states
   const [notifications, setNotifications] = useState([]);
@@ -1242,6 +1322,7 @@ const handleCategoryChange = async (category) => {
   }
 };
 
+
 const handleMeasurementChange = (measurementName, value) => {
   setManualOrderForm(prev => ({
     ...prev,
@@ -1359,6 +1440,34 @@ const handleSaveCustomCategory = async () => {
     }
   }
   
+};
+
+const saveCustomRelationships = async (newRelationships) => {
+  try {
+    const user = auth.currentUser;
+    if (!user) return;
+    
+    await updateDoc(doc(db, 'tailors', user.uid), {
+      customRelationships: newRelationships,
+      updatedAt: serverTimestamp()
+    });
+  } catch (error) {
+    console.error('Error saving custom relationships:', error);
+  }
+};
+
+const loadCustomRelationships = async () => {
+  try {
+    const user = auth.currentUser;
+    if (!user) return;
+    
+    const tailorDoc = await getDoc(doc(db, 'tailors', user.uid));
+    if (tailorDoc.exists() && tailorDoc.data().customRelationships) {
+      setCustomRelationships(tailorDoc.data().customRelationships);
+    }
+  } catch (error) {
+    console.error('Error loading custom relationships:', error);
+  }
 };
 
 
@@ -1667,8 +1776,24 @@ useEffect(() => {
         console.error('Error loading custom categories:', error);
       }
     };
+
+    const loadCustomRelationships = async () => {
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+      
+      const tailorDoc = await getDoc(doc(db, 'tailors', user.uid));
+      if (tailorDoc.exists() && tailorDoc.data().customRelationships) {
+        setCustomRelationships(tailorDoc.data().customRelationships);
+      }
+    } catch (error) {
+      console.error('Error loading custom relationships:', error);
+    }
+  };
+  
     
     loadCustomCategories();
+    loadCustomRelationships();
   }, []);
 
   const handleEditSingleMeasurement = (customer, garmentType, record, recordIndex) => {
@@ -1740,7 +1865,6 @@ const handleDeleteSingleMeasurement = async (customer, garmentType, orderId) => 
     }
   }
 };
-
 
   const handleLogout = async () => {
     try {
@@ -3408,6 +3532,7 @@ const NotificationDropdown = () => {
   setExistingOrders={setExistingOrders}
   selectedRelationship={selectedRelationship}
   setSelectedRelationship={setSelectedRelationship}
+  saveCustomRelationships={saveCustomRelationships}
 />
 
 <CustomCategoryModal
